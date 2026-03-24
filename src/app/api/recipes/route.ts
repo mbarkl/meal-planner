@@ -99,6 +99,37 @@ export async function POST(request: Request) {
 
   // Insert ingredients if provided
   if (ingredients && Array.isArray(ingredients) && ingredients.length > 0) {
+    const VALID_UNITS = new Set([
+      'oz', 'lb', 'g', 'kg', 'ml', 'l', 'cup', 'tbsp', 'tsp',
+      'count', 'bunch', 'bag', 'box', 'can', 'jar', 'bottle', 'pack', 'other',
+    ]);
+
+    // Normalize common unit variations to valid enum values
+    function normalizeUnit(raw: string | null | undefined): string | null {
+      if (!raw) return null;
+      const u = raw.toLowerCase().trim();
+      if (VALID_UNITS.has(u)) return u;
+      // Common variations
+      const unitMap: Record<string, string> = {
+        cups: 'cup', tablespoon: 'tbsp', tablespoons: 'tbsp',
+        teaspoon: 'tsp', teaspoons: 'tsp', ounce: 'oz', ounces: 'oz',
+        pound: 'lb', pounds: 'lb', gram: 'g', grams: 'g',
+        kilogram: 'kg', kilograms: 'kg', liter: 'l', liters: 'l',
+        milliliter: 'ml', milliliters: 'ml', bottle: 'bottle', bottles: 'bottle',
+        can: 'can', cans: 'can', jar: 'jar', jars: 'jar',
+        bag: 'bag', bags: 'bag', box: 'box', boxes: 'box',
+        pack: 'pack', packs: 'pack', bunch: 'bunch', bunches: 'bunch',
+        piece: 'count', pieces: 'count', whole: 'count', clove: 'count',
+        cloves: 'count', slice: 'count', slices: 'count', pinch: 'tsp',
+        dash: 'tsp', handful: 'count', large: 'count', medium: 'count',
+        small: 'count', head: 'count', stalk: 'count', stalks: 'count',
+        sprig: 'count', sprigs: 'count',
+      };
+      if (unitMap[u]) return unitMap[u];
+      // If nothing matches, store as null (the ingredient name will still show)
+      return null;
+    }
+
     const ingredientRows = ingredients.map(
       (
         ing: {
@@ -113,8 +144,8 @@ export async function POST(request: Request) {
       ) => ({
         recipe_id: recipe.id,
         ingredient_name: ing.ingredient_name,
-        quantity: ing.quantity || null,
-        unit: ing.unit || null,
+        quantity: ing.quantity != null ? ing.quantity : null,
+        unit: normalizeUnit(ing.unit),
         preparation: ing.preparation || null,
         is_optional: ing.is_optional ?? false,
         sort_order: ing.sort_order ?? index,

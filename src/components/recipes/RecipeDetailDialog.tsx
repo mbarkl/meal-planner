@@ -87,7 +87,7 @@ export function RecipeDetailDialog({
                 <li key={idx} className="flex items-start gap-2 text-sm">
                   <span className="text-muted-foreground mt-1.5 h-1.5 w-1.5 rounded-full bg-current shrink-0" />
                   <span>
-                    {ing.quantity != null && (
+                    {ing.quantity != null && ing.quantity > 0 && (
                       <span className="font-medium">{ing.quantity} </span>
                     )}
                     {ing.unit && <span className="font-medium">{ing.unit} </span>}
