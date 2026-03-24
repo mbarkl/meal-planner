@@ -197,6 +197,7 @@ export async function POST(request: Request) {
           added_manually: false,
           notes: null,
           sort_order: sortOrder++,
+          store: null,
         });
 
         // Mark as assigned so it doesn't end up in 'other' again
@@ -232,6 +233,7 @@ export async function POST(request: Request) {
           added_manually: false,
           notes: null,
           sort_order: sortOrder++,
+          store: null,
         });
       }
     }

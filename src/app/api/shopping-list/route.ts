@@ -39,29 +39,67 @@ export async function POST(request: Request) {
     unit,
     category,
     notes,
+    store,
+    create_list,
   }: {
-    shopping_list_id: string;
+    shopping_list_id?: string;
     ingredient_name: string;
     quantity?: number | null;
     unit?: string | null;
     category?: string | null;
     notes?: string | null;
+    store?: string | null;
+    create_list?: boolean;
   } = body;
 
-  if (!shopping_list_id || !ingredient_name) {
+  if (!ingredient_name) {
     return NextResponse.json(
-      { error: 'Missing required fields: shopping_list_id, ingredient_name' },
+      { error: 'Missing required field: ingredient_name' },
       { status: 400 }
     );
   }
 
   const supabase = createServerClient();
 
+  let listId = shopping_list_id;
+
+  // If no list exists, create one
+  if (!listId && create_list) {
+    const now = new Date();
+    const dayOfWeek = now.getDay();
+    const daysToWed = dayOfWeek >= 3 ? dayOfWeek - 3 : dayOfWeek + 4;
+    const lastWednesday = new Date(now);
+    lastWednesday.setDate(now.getDate() - daysToWed);
+    const weekStartStr = lastWednesday.toISOString().split('T')[0];
+
+    const { data: newList, error: listError } = await supabase
+      .from('shopping_lists')
+      .insert({
+        week_start: weekStartStr,
+        store: null,
+        status: 'active',
+      })
+      .select()
+      .single();
+
+    if (listError) {
+      return NextResponse.json({ error: listError.message }, { status: 500 });
+    }
+    listId = newList.id;
+  }
+
+  if (!listId) {
+    return NextResponse.json(
+      { error: 'Missing shopping_list_id (or set create_list: true)' },
+      { status: 400 }
+    );
+  }
+
   // Get the max sort_order for this list
   const { data: maxItem } = await supabase
     .from('shopping_list_items')
     .select('sort_order')
-    .eq('shopping_list_id', shopping_list_id)
+    .eq('shopping_list_id', listId)
     .order('sort_order', { ascending: false })
     .limit(1)
     .single();
@@ -71,7 +109,7 @@ export async function POST(request: Request) {
   const { data, error } = await supabase
     .from('shopping_list_items')
     .insert({
-      shopping_list_id,
+      shopping_list_id: listId,
       ingredient_name,
       quantity: quantity ?? null,
       unit: unit ?? null,
@@ -83,6 +121,7 @@ export async function POST(request: Request) {
       added_manually: true,
       notes: notes ?? null,
       sort_order: nextSortOrder,
+      store: store ?? null,
     })
     .select()
     .single();
@@ -91,12 +130,18 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 
-  return NextResponse.json(data, { status: 201 });
+  // Return the item with the list_id so the page can update
+  return NextResponse.json({ ...data, _list_id: listId }, { status: 201 });
 }
 
 export async function PUT(request: Request) {
   const body = await request.json();
-  const { id, ...updates }: { id: string; is_checked?: boolean; is_owned?: boolean } = body;
+  const { id, ...updates }: {
+    id: string;
+    is_checked?: boolean;
+    is_owned?: boolean;
+    store?: string | null;
+  } = body;
 
   if (!id) {
     return NextResponse.json(

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { Card, CardContent, CardFooter } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Badge } from "@/components/ui/badge";
@@ -21,9 +21,14 @@ import {
   Plus,
   ShoppingCart,
   DollarSign,
+  Store,
+  Trash2,
+  LayoutGrid,
 } from "lucide-react";
 import { AISLE_ORDER, CATEGORY_DISPLAY } from "@/lib/constants";
 import type { ShoppingList, ShoppingListItem } from "@/lib/types";
+
+type GroupMode = "category" | "store";
 
 interface ShoppingListViewProps {
   list: ShoppingList & { items: ShoppingListItem[] };
@@ -36,41 +41,87 @@ interface ShoppingListViewProps {
     quantity?: number | null;
     unit?: string | null;
     category?: string | null;
+    store?: string | null;
   }) => Promise<void>;
+  onItemDelete?: (id: string) => Promise<void>;
 }
 
 export default function ShoppingListView({
   list,
   onItemUpdate,
   onItemAdd,
+  onItemDelete,
 }: ShoppingListViewProps) {
-  const [collapsedCategories, setCollapsedCategories] = useState<Set<string>>(
+  const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(
     new Set()
   );
+  const [groupMode, setGroupMode] = useState<GroupMode>("category");
   const [dialogOpen, setDialogOpen] = useState(false);
   const [newItemName, setNewItemName] = useState("");
   const [newItemQuantity, setNewItemQuantity] = useState("");
   const [newItemUnit, setNewItemUnit] = useState("");
+  const [newItemStore, setNewItemStore] = useState("");
   const [addingItem, setAddingItem] = useState(false);
 
   const items = list.items || [];
 
-  // Group items by category, ordered by AISLE_ORDER
-  const groupedItems: Record<string, ShoppingListItem[]> = {};
-  for (const category of AISLE_ORDER) {
-    const categoryItems = items.filter(
-      (item) => (item.category || "other") === category
-    );
-    if (categoryItems.length > 0) {
-      // Sort: non-owned first, then owned items at the bottom
-      groupedItems[category] = categoryItems.sort((a, b) => {
-        if (a.is_owned !== b.is_owned) return a.is_owned ? 1 : -1;
-        return a.sort_order - b.sort_order;
-      });
-    }
-  }
+  // Get unique store names for the store suggestions
+  const knownStores = useMemo(() => {
+    const stores = new Set<string>();
+    items.forEach((item) => {
+      if (item.store) stores.add(item.store);
+    });
+    return Array.from(stores).sort();
+  }, [items]);
 
-  // Calculate estimated total (only items with prices that aren't already owned)
+  // Group items by category (aisle order)
+  const groupedByCategory = useMemo(() => {
+    const groups: Record<string, ShoppingListItem[]> = {};
+    for (const category of AISLE_ORDER) {
+      const categoryItems = items.filter(
+        (item) => (item.category || "other") === category
+      );
+      if (categoryItems.length > 0) {
+        groups[category] = categoryItems.sort((a, b) => {
+          if (a.is_checked !== b.is_checked) return a.is_checked ? 1 : -1;
+          if (a.is_owned !== b.is_owned) return a.is_owned ? 1 : -1;
+          return a.sort_order - b.sort_order;
+        });
+      }
+    }
+    return groups;
+  }, [items]);
+
+  // Group items by store
+  const groupedByStore = useMemo(() => {
+    const groups: Record<string, ShoppingListItem[]> = {};
+    const sortedItems = [...items].sort((a, b) => {
+      if (a.is_checked !== b.is_checked) return a.is_checked ? 1 : -1;
+      if (a.is_owned !== b.is_owned) return a.is_owned ? 1 : -1;
+      return a.sort_order - b.sort_order;
+    });
+
+    for (const item of sortedItems) {
+      const storeName = item.store || "No Store";
+      if (!groups[storeName]) {
+        groups[storeName] = [];
+      }
+      groups[storeName].push(item);
+    }
+
+    // Sort groups: named stores alphabetically, "No Store" at end
+    const sortedEntries = Object.entries(groups).sort(([a], [b]) => {
+      if (a === "No Store") return 1;
+      if (b === "No Store") return -1;
+      return a.localeCompare(b);
+    });
+
+    return Object.fromEntries(sortedEntries);
+  }, [items]);
+
+  const activeGroups = groupMode === "category" ? groupedByCategory : groupedByStore;
+
+  // Calculate estimated total
   const estimatedTotal = items.reduce((sum, item) => {
     if (item.estimated_price && !item.is_owned) {
       return sum + item.estimated_price;
@@ -81,16 +132,23 @@ export default function ShoppingListView({
   const checkedCount = items.filter((item) => item.is_checked).length;
   const totalCount = items.length;
 
-  function toggleCategory(category: string) {
-    setCollapsedCategories((prev) => {
+  function toggleGroup(group: string) {
+    setCollapsedGroups((prev) => {
       const next = new Set(prev);
-      if (next.has(category)) {
-        next.delete(category);
+      if (next.has(group)) {
+        next.delete(group);
       } else {
-        next.add(category);
+        next.add(group);
       }
       return next;
     });
+  }
+
+  function getGroupLabel(key: string): string {
+    if (groupMode === "category") {
+      return CATEGORY_DISPLAY[key]?.label || key;
+    }
+    return key;
   }
 
   async function handleAddItem() {
@@ -102,10 +160,12 @@ export default function ShoppingListView({
         quantity: newItemQuantity ? parseFloat(newItemQuantity) : null,
         unit: newItemUnit || null,
         category: "other",
+        store: newItemStore.trim() || null,
       });
       setNewItemName("");
       setNewItemQuantity("");
       setNewItemUnit("");
+      setNewItemStore("");
       setDialogOpen(false);
     } finally {
       setAddingItem(false);
@@ -114,59 +174,74 @@ export default function ShoppingListView({
 
   return (
     <div className="space-y-4">
-      {/* Progress and actions header */}
-      <div className="flex items-center justify-between">
+      {/* Progress, group toggle, and add button */}
+      <div className="flex items-center justify-between flex-wrap gap-2">
         <div className="flex items-center gap-2 text-sm text-muted-foreground">
           <ShoppingCart className="h-4 w-4" />
           <span>
             {checkedCount} of {totalCount} items checked
           </span>
         </div>
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={() => setDialogOpen(true)}
-        >
-          <Plus className="h-4 w-4 mr-1" />
-          Add Item
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button
+            variant={groupMode === "category" ? "default" : "outline"}
+            size="sm"
+            onClick={() => { setGroupMode("category"); setCollapsedGroups(new Set()); }}
+          >
+            <LayoutGrid className="h-3.5 w-3.5 mr-1" />
+            By Aisle
+          </Button>
+          <Button
+            variant={groupMode === "store" ? "default" : "outline"}
+            size="sm"
+            onClick={() => { setGroupMode("store"); setCollapsedGroups(new Set()); }}
+          >
+            <Store className="h-3.5 w-3.5 mr-1" />
+            By Store
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => setDialogOpen(true)}
+          >
+            <Plus className="h-4 w-4 mr-1" />
+            Add Item
+          </Button>
+        </div>
       </div>
 
-      {/* Category groups */}
-      {Object.entries(groupedItems).map(([category, categoryItems]) => {
-        const display = CATEGORY_DISPLAY[category] || {
-          label: category,
-          icon: "Package",
-        };
-        const isCollapsed = collapsedCategories.has(category);
+      {/* Grouped items */}
+      {Object.entries(activeGroups).map(([groupKey, groupItems]) => {
+        const isCollapsed = collapsedGroups.has(groupKey);
 
         return (
-          <Card key={category}>
+          <Card key={groupKey}>
             <button
               className="flex w-full items-center gap-2 px-4 pt-4 pb-2 text-left"
-              onClick={() => toggleCategory(category)}
+              onClick={() => toggleGroup(groupKey)}
             >
               {isCollapsed ? (
                 <ChevronRight className="h-4 w-4 text-muted-foreground" />
               ) : (
                 <ChevronDown className="h-4 w-4 text-muted-foreground" />
               )}
-              <span className="font-medium text-sm">{display.label}</span>
+              {groupMode === "store" && (
+                <Store className="h-4 w-4 text-muted-foreground" />
+              )}
+              <span className="font-medium text-sm">{getGroupLabel(groupKey)}</span>
               <span className="text-xs text-muted-foreground">
-                ({categoryItems.length})
+                ({groupItems.length})
               </span>
             </button>
 
             {!isCollapsed && (
               <CardContent className="pt-0 pb-2">
                 <ul className="space-y-1">
-                  {categoryItems.map((item) => (
+                  {groupItems.map((item) => (
                     <li
                       key={item.id}
                       className={`flex items-center gap-3 rounded-md px-2 py-1.5 ${
-                        item.is_owned
-                          ? "opacity-50"
-                          : ""
+                        item.is_owned ? "opacity-50" : ""
                       }`}
                     >
                       <Checkbox
@@ -175,7 +250,7 @@ export default function ShoppingListView({
                           onItemUpdate(item.id, { is_checked: checked })
                         }
                       />
-                      <div className="flex flex-1 items-center gap-2 min-w-0">
+                      <div className="flex flex-1 items-center gap-2 min-w-0 flex-wrap">
                         <span
                           className={`text-sm ${
                             item.is_checked
@@ -191,6 +266,12 @@ export default function ShoppingListView({
                             {item.unit ? ` ${item.unit}` : ""}
                           </span>
                         )}
+                        {/* Show store badge when grouped by category */}
+                        {groupMode === "category" && item.store && (
+                          <Badge variant="outline" className="text-xs py-0 px-1.5">
+                            {item.store}
+                          </Badge>
+                        )}
                       </div>
                       <div className="flex items-center gap-1.5 shrink-0">
                         {item.estimated_price != null && (
@@ -204,8 +285,18 @@ export default function ShoppingListView({
                         )}
                         {item.is_owned && (
                           <span className="text-xs text-muted-foreground">
-                            Already have
+                            Have
                           </span>
+                        )}
+                        {onItemDelete && (
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-6 w-6 text-muted-foreground hover:text-destructive"
+                            onClick={() => onItemDelete(item.id)}
+                          >
+                            <Trash2 className="h-3 w-3" />
+                          </Button>
                         )}
                       </div>
                     </li>
@@ -230,7 +321,7 @@ export default function ShoppingListView({
       )}
 
       {/* Empty state */}
-      {Object.keys(groupedItems).length === 0 && (
+      {Object.keys(activeGroups).length === 0 && (
         <div className="text-center py-8 text-muted-foreground text-sm">
           No items in this shopping list.
         </div>
@@ -242,7 +333,7 @@ export default function ShoppingListView({
           <DialogHeader>
             <DialogTitle>Add Item</DialogTitle>
             <DialogDescription>
-              Add a custom item to your shopping list.
+              Add an item to your shopping list.
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-3">
@@ -262,6 +353,28 @@ export default function ShoppingListView({
                   if (e.key === "Enter") handleAddItem();
                 }}
               />
+            </div>
+            <div>
+              <label
+                htmlFor="add-item-store"
+                className="text-sm font-medium mb-1 block"
+              >
+                Store
+              </label>
+              <Input
+                id="add-item-store"
+                placeholder="e.g. Fry's, Costco, Trader Joe's"
+                value={newItemStore}
+                onChange={(e) => setNewItemStore(e.target.value)}
+                list="store-suggestions"
+              />
+              {knownStores.length > 0 && (
+                <datalist id="store-suggestions">
+                  {knownStores.map((s) => (
+                    <option key={s} value={s} />
+                  ))}
+                </datalist>
+              )}
             </div>
             <div className="flex gap-2">
               <div className="flex-1">

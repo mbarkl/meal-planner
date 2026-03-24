@@ -145,6 +145,7 @@ export interface ShoppingListItem {
   added_manually: boolean;
   notes: string | null;
   sort_order: number;
+  store: string | null;
 }
 
 export interface Purchase {
