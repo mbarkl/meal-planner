@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
-import { Plus } from 'lucide-react';
+import { Plus, Upload } from 'lucide-react';
 import { toast } from 'sonner';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { Button } from '@/components/ui/button';
@@ -14,11 +14,13 @@ import {
 } from '@/components/ui/dialog';
 import { PantryItemForm } from '@/components/pantry/PantryItemForm';
 import { PantryList } from '@/components/pantry/PantryList';
+import { PantryBatchImport } from '@/components/pantry/PantryBatchImport';
 import type { PantryItem, PantryLocation } from '@/lib/types';
 
 export default function PantryPage() {
   const [items, setItems] = useState<PantryItem[]>([]);
   const [dialogOpen, setDialogOpen] = useState(false);
+  const [importOpen, setImportOpen] = useState(false);
   const [editingItem, setEditingItem] = useState<PantryItem | undefined>(undefined);
 
   const fetchItems = useCallback(async () => {
@@ -116,10 +118,16 @@ export default function PantryPage() {
             Track items in your pantry, fridge, and freezer
           </p>
         </div>
-        <Button onClick={handleAddNew}>
-          <Plus className="size-4 mr-1" />
-          Add Item
-        </Button>
+        <div className="flex gap-2">
+          <Button variant="outline" onClick={() => setImportOpen(true)}>
+            <Upload className="size-4 mr-1" />
+            Import
+          </Button>
+          <Button onClick={handleAddNew}>
+            <Plus className="size-4 mr-1" />
+            Add Item
+          </Button>
+        </div>
       </div>
 
       <Tabs defaultValue="pantry">
@@ -173,6 +181,12 @@ export default function PantryPage() {
           />
         </DialogContent>
       </Dialog>
+
+      <PantryBatchImport
+        open={importOpen}
+        onOpenChange={setImportOpen}
+        onImported={fetchItems}
+      />
     </div>
   );
 }
