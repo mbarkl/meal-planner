@@ -16,10 +16,12 @@ import {
   Plus,
   Trash2,
   Loader2,
+  Upload,
 } from "lucide-react";
 import { toast } from "sonner";
 import type { Deal } from "@/lib/types";
 import { CATEGORY_DISPLAY } from "@/lib/constants";
+import { DealsBatchImport } from "@/components/deals/DealsBatchImport";
 
 const ALL_CATEGORIES = "all";
 const CATEGORIES = Object.keys(CATEGORY_DISPLAY);
@@ -29,6 +31,7 @@ export default function SaleItemsPage() {
   const [loading, setLoading] = useState(true);
   const [selectedCategory, setSelectedCategory] = useState(ALL_CATEGORIES);
   const [submitting, setSubmitting] = useState(false);
+  const [importOpen, setImportOpen] = useState(false);
 
   // Form state
   const [itemName, setItemName] = useState("");
@@ -134,8 +137,16 @@ export default function SaleItemsPage() {
 
   return (
     <div>
-      <h1 className="text-2xl font-bold mb-1">Sale Items</h1>
-      <p className="text-muted-foreground mb-6">Add this week&apos;s deals manually</p>
+      <div className="flex items-start justify-between mb-6">
+        <div>
+          <h1 className="text-2xl font-bold mb-1">Sale Items</h1>
+          <p className="text-muted-foreground">Add this week&apos;s deals manually</p>
+        </div>
+        <Button variant="outline" onClick={() => setImportOpen(true)}>
+          <Upload className="h-4 w-4 mr-1" />
+          Import
+        </Button>
+      </div>
 
       {/* Add Sale Item Form */}
       <Card className="mb-6">
@@ -277,6 +288,12 @@ export default function SaleItemsPage() {
           </div>
         </div>
       )}
+
+      <DealsBatchImport
+        open={importOpen}
+        onOpenChange={setImportOpen}
+        onImported={fetchDeals}
+      />
     </div>
   );
 }
