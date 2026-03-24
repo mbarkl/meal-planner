@@ -1,14 +1,20 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
-import { BookOpen, Heart, Loader2, Trash2 } from "lucide-react";
+import { Plus, Heart, Loader2 } from "lucide-react";
+import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
 import { RecipeCard, type RecipeCardData } from "@/components/recipes/RecipeCard";
+import { AddRecipeDialog } from "@/components/recipes/AddRecipeDialog";
+import { RecipeDetailDialog } from "@/components/recipes/RecipeDetailDialog";
 import type { Recipe } from "@/lib/types";
 
 export default function RecipesPage() {
   const [savedRecipes, setSavedRecipes] = useState<Recipe[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [addDialogOpen, setAddDialogOpen] = useState(false);
+  const [selectedRecipe, setSelectedRecipe] = useState<Recipe | null>(null);
+  const [detailOpen, setDetailOpen] = useState(false);
 
   const fetchSavedRecipes = useCallback(async () => {
     try {
@@ -20,7 +26,6 @@ export default function RecipesPage() {
       setSavedRecipes(data);
     } catch (error) {
       console.error("Error fetching saved recipes:", error);
-      toast.error("Failed to load saved recipes");
     } finally {
       setIsLoading(false);
     }
@@ -31,12 +36,8 @@ export default function RecipesPage() {
   }, [fetchSavedRecipes]);
 
   const handleToggleFavorite = useCallback(
-    async (card: RecipeCardData) => {
-      const recipe = savedRecipes.find((r) => r.id === card.id);
-      if (!recipe) return;
-
+    async (recipe: Recipe) => {
       const newFavValue = !recipe.is_favorited;
-
       try {
         const response = await fetch("/api/recipes", {
           method: "PUT",
@@ -47,9 +48,7 @@ export default function RecipesPage() {
           }),
         });
 
-        if (!response.ok) {
-          throw new Error("Failed to update recipe");
-        }
+        if (!response.ok) throw new Error("Failed to update recipe");
 
         setSavedRecipes((prev) =>
           prev.map((r) =>
@@ -57,34 +56,64 @@ export default function RecipesPage() {
           )
         );
 
+        // Also update the selected recipe if it's the same one
+        setSelectedRecipe((prev) =>
+          prev?.id === recipe.id ? { ...prev, is_favorited: newFavValue } : prev
+        );
+
         toast.success(
           newFavValue
             ? `"${recipe.title}" added to favorites`
             : `"${recipe.title}" removed from favorites`
         );
-      } catch (error) {
+      } catch {
         toast.error("Failed to update favorite status");
+      }
+    },
+    []
+  );
+
+  const handleCardFavorite = useCallback(
+    (card: RecipeCardData) => {
+      const recipe = savedRecipes.find((r) => r.id === card.id);
+      if (recipe) handleToggleFavorite(recipe);
+    },
+    [savedRecipes, handleToggleFavorite]
+  );
+
+  const handleDelete = useCallback(async (recipe: Recipe) => {
+    try {
+      const response = await fetch(`/api/recipes?id=${recipe.id}`, {
+        method: "DELETE",
+      });
+
+      if (!response.ok) throw new Error("Failed to remove recipe");
+
+      setSavedRecipes((prev) => prev.filter((r) => r.id !== recipe.id));
+      toast.success(`"${recipe.title}" removed`);
+    } catch {
+      toast.error("Failed to remove recipe");
+    }
+  }, []);
+
+  const handleCardRemove = useCallback(
+    (card: RecipeCardData) => {
+      const recipe = savedRecipes.find((r) => r.id === card.id);
+      if (recipe) handleDelete(recipe);
+    },
+    [savedRecipes, handleDelete]
+  );
+
+  const handleCardClick = useCallback(
+    (card: RecipeCardData) => {
+      const recipe = savedRecipes.find((r) => r.id === card.id);
+      if (recipe) {
+        setSelectedRecipe(recipe);
+        setDetailOpen(true);
       }
     },
     [savedRecipes]
   );
-
-  const handleRemove = useCallback(async (card: RecipeCardData) => {
-    try {
-      const response = await fetch(`/api/recipes?id=${card.id}`, {
-        method: "DELETE",
-      });
-
-      if (!response.ok) {
-        throw new Error("Failed to remove recipe");
-      }
-
-      setSavedRecipes((prev) => prev.filter((r) => r.id !== card.id));
-      toast.success(`"${card.title}" removed from your recipes`);
-    } catch (error) {
-      toast.error("Failed to remove recipe");
-    }
-  }, []);
 
   const mapSavedToCard = (recipe: Recipe): RecipeCardData => ({
     id: recipe.id,
@@ -98,10 +127,18 @@ export default function RecipesPage() {
 
   return (
     <div>
-      <h1 className="text-2xl font-bold mb-1">Recipes</h1>
-      <p className="text-muted-foreground mb-6">
-        Your saved and AI-generated recipes
-      </p>
+      <div className="flex items-start justify-between mb-6">
+        <div>
+          <h1 className="text-2xl font-bold mb-1">My Recipes</h1>
+          <p className="text-muted-foreground">
+            Your personal cookbook &mdash; {savedRecipes.length} recipe{savedRecipes.length !== 1 ? 's' : ''}
+          </p>
+        </div>
+        <Button onClick={() => setAddDialogOpen(true)}>
+          <Plus className="h-4 w-4 mr-1" />
+          Add Recipe
+        </Button>
+      </div>
 
       {isLoading ? (
         <div className="flex items-center justify-center py-12">
@@ -113,23 +150,42 @@ export default function RecipesPage() {
           <p className="text-sm font-medium text-muted-foreground">
             No recipes yet
           </p>
-          <p className="text-xs text-muted-foreground mt-1">
-            Generate a meal plan to see AI-created recipes here.
+          <p className="text-xs text-muted-foreground mt-1 mb-4">
+            Add recipes from websites, paste recipe text, or enter them manually.
           </p>
+          <Button onClick={() => setAddDialogOpen(true)}>
+            <Plus className="h-4 w-4 mr-1" />
+            Add Your First Recipe
+          </Button>
         </div>
       ) : (
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {savedRecipes.map((recipe) => (
-            <RecipeCard
-              key={recipe.id}
-              recipe={mapSavedToCard(recipe)}
-              isSaved
-              onToggleFavorite={handleToggleFavorite}
-              onRemove={handleRemove}
-            />
+            <div key={recipe.id} onClick={() => handleCardClick(mapSavedToCard(recipe))} className="cursor-pointer">
+              <RecipeCard
+                recipe={mapSavedToCard(recipe)}
+                isSaved
+                onToggleFavorite={handleCardFavorite}
+                onRemove={handleCardRemove}
+              />
+            </div>
           ))}
         </div>
       )}
+
+      <AddRecipeDialog
+        open={addDialogOpen}
+        onOpenChange={setAddDialogOpen}
+        onSaved={fetchSavedRecipes}
+      />
+
+      <RecipeDetailDialog
+        recipe={selectedRecipe}
+        open={detailOpen}
+        onOpenChange={setDetailOpen}
+        onToggleFavorite={handleToggleFavorite}
+        onDelete={handleDelete}
+      />
     </div>
   );
 }

@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { createServerClient } from '@/lib/supabase/server';
 import { generateMealPlan } from '@/lib/claude/generate-meal-plan';
-import type { Deal, PantryItem, UserPreferences, StoreName, MealType, UnitType } from '@/lib/types';
+import type { Deal, PantryItem, UserPreferences, Recipe, StoreName, MealType, UnitType } from '@/lib/types';
 import { DAYS_OF_WEEK, MEAL_TYPES } from '@/lib/types';
 
 const USER_ID = '00000000-0000-0000-0000-000000000001';
@@ -91,11 +91,27 @@ export async function POST(request: Request) {
       notes: null,
     };
 
-    // Generate the meal plan using Claude
+    // Fetch saved recipes from the user's cookbook
+    const { data: savedRecipes, error: recipesError } = await supabase
+      .from('recipes')
+      .select('*, ingredients:recipe_ingredients(*)')
+      .order('created_at', { ascending: false });
+
+    if (recipesError) {
+      console.error('Error fetching recipes:', recipesError);
+    }
+
+    const cookbook: Recipe[] = (savedRecipes || []).map((r: Record<string, unknown>) => ({
+      ...r,
+      ingredients: r.ingredients || r.recipe_ingredients,
+    })) as Recipe[];
+
+    // Generate the meal plan using Claude (picks from cookbook only)
     const generatedMeals = await generateMealPlan({
       deals: (deals as Deal[]) || [],
       pantryItems: (pantryItems as PantryItem[]) || [],
       preferences: userPreferences,
+      savedRecipes: cookbook,
       numMeals,
       numPeople,
       storePref: storePreference,

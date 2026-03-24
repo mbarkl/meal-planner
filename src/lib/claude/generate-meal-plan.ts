@@ -3,6 +3,7 @@ import type {
   Deal,
   PantryItem,
   UserPreferences,
+  Recipe,
   StoreName,
   MealType,
   DayOfWeek,
@@ -12,6 +13,7 @@ export interface GeneratedMeal {
   day: DayOfWeek;
   meal_type: MealType;
   recipe_title: string;
+  recipe_id: string | null;
   ingredients: {
     name: string;
     quantity: number | null;
@@ -31,6 +33,7 @@ export interface GenerateMealPlanParams {
   deals: Deal[];
   pantryItems: PantryItem[];
   preferences: UserPreferences;
+  savedRecipes: Recipe[];
   numMeals: number;
   numPeople: number;
   storePref: StoreName | null;
@@ -39,7 +42,7 @@ export interface GenerateMealPlanParams {
 export async function generateMealPlan(
   params: GenerateMealPlanParams
 ): Promise<GeneratedMeal[]> {
-  const { deals, pantryItems, preferences, numMeals, numPeople, storePref } =
+  const { deals, pantryItems, preferences, savedRecipes, numMeals, numPeople, storePref } =
     params;
   const client = getClaudeClient();
 
@@ -49,70 +52,78 @@ export async function generateMealPlan(
       ? 'Safeway'
       : 'either store';
 
-  const systemPrompt = `You are an expert meal planning assistant. Your goal is to create a practical, budget-friendly weekly meal plan that:
+  // Build the cookbook list
+  const cookbookList = savedRecipes.length > 0
+    ? savedRecipes
+        .map((r) => {
+          const time = r.total_time_minutes || ((r.prep_time_minutes || 0) + (r.cook_time_minutes || 0));
+          const timeStr = time > 0 ? ` (${time} min)` : '';
+          const cuisine = r.cuisine ? ` [${r.cuisine}]` : '';
+          const ings = r.ingredients
+            ? r.ingredients.map((i) => i.ingredient_name).join(', ')
+            : 'no ingredients listed';
+          return `- ID: ${r.id} | "${r.title}"${cuisine}${timeStr}\n  Ingredients: ${ings}`;
+        })
+        .join('\n')
+    : 'NO RECIPES IN COOKBOOK. Cannot generate a meal plan.';
 
-1. PRIORITIZES using sale items from the grocery store to maximize savings
-2. Uses pantry items that are expiring soon before they go bad
-3. Respects all dietary restrictions, allergies, and dislikes
-4. Plans leftover reuse strategically (e.g., cook extra chicken on Monday to use in Wednesday's stir-fry)
-5. Suggests which nights to make extra portions for later meals
-6. Considers cooking skill level and time constraints
-7. Creates balanced, varied meals across the week
+  if (savedRecipes.length === 0) {
+    throw new Error('No recipes in your cookbook. Add some recipes first before generating a meal plan.');
+  }
 
-Return ONLY a JSON array of meal objects. No markdown, no explanation, no wrapping. Just the raw JSON array.
+  const systemPrompt = `You are a meal planning assistant. The user has a personal cookbook of saved recipes. Your job is to SELECT recipes from their cookbook and schedule them into a weekly meal plan.
 
-Each meal object must have this exact structure:
+CRITICAL RULES:
+1. You must ONLY use recipes from the user's cookbook below. Do NOT invent new recipes.
+2. Each meal must reference an exact recipe_id and recipe_title from the cookbook.
+3. You may schedule the same recipe multiple times if needed.
+4. For leftover meals, reference the original recipe and set is_leftover: true.
+5. Consider sale items — prefer recipes whose ingredients match current deals.
+6. Use expiring pantry items — prefer recipes that use those ingredients.
+7. Respect dietary restrictions, allergies, and dislikes.
+8. Vary the meals — avoid scheduling the same recipe on consecutive days.
+
+Return ONLY a JSON array. No markdown, no explanation.
+
+Each object must have:
 {
   "day": "monday" | "tuesday" | "wednesday" | "thursday" | "friday" | "saturday" | "sunday",
   "meal_type": "breakfast" | "lunch" | "dinner" | "snack",
-  "recipe_title": "string",
-  "ingredients": [
-    {
-      "name": "string",
-      "quantity": number or null,
-      "unit": "string" or null,
-      "preparation": "string" or null
-    }
-  ],
-  "directions": [
-    { "step": 1, "text": "step description" }
-  ],
-  "servings": number,
-  "prep_time": number or null (minutes),
-  "cook_time": number or null (minutes),
+  "recipe_title": "exact title from cookbook",
+  "recipe_id": "exact ID from cookbook",
+  "ingredients": [copy from cookbook recipe],
+  "directions": [copy from cookbook recipe],
+  "servings": number (adjusted for numPeople),
+  "prep_time": number or null,
+  "cook_time": number or null,
   "is_leftover": boolean,
-  "leftover_source": "recipe title this is leftover from" or null,
+  "leftover_source": "recipe title" or null,
   "prep_notes": "string" or null
 }
 
-Rules:
-- For leftover meals, set is_leftover to true and reference the source recipe title in leftover_source
-- When a meal reuses leftovers, its ingredients list should only include NEW ingredients needed (not the leftover base)
-- For leftover meals, include a prep_note like "Use leftover [dish] from [day]"
-- Ingredient quantities should be for the specified number of people
-- Include practical, clear step-by-step directions
-- Keep prep times realistic for the skill level`;
+For leftover meals:
+- Set is_leftover: true
+- Set leftover_source to the original recipe title
+- Set ingredients to [] (no new ingredients needed)
+- Set directions to [{"step": 1, "text": "Reheat leftover [recipe] from [day]"}]
+- Add a prep_note like "Use leftover from Monday's dinner"`;
 
-  // Build the user message with all context
+  // Build context
   const saleItemsList = deals.length > 0
     ? deals
         .map((d) => {
           const price = `$${d.sale_price.toFixed(2)}`;
           const reg = d.regular_price ? ` (reg $${d.regular_price.toFixed(2)})` : '';
-          const unit = d.unit ? ` / ${d.unit}` : '';
-          return `- ${d.item_name}${d.brand ? ` (${d.brand})` : ''}: ${price}${unit}${reg} [${d.category}]`;
+          return `- ${d.item_name}: ${price}${reg} [${d.category}]`;
         })
         .join('\n')
-    : 'No current sale items available.';
+    : 'No current sale items.';
 
   const pantryList = pantryItems.length > 0
     ? pantryItems
         .map((p) => {
-          const exp = p.expiration_date
-            ? ` (expires: ${p.expiration_date})`
-            : '';
-          const loc = ` [${p.location}]`;
-          return `- ${p.name}: ${p.quantity} ${p.unit}${loc}${exp}`;
+          const exp = p.expiration_date ? ` (expires: ${p.expiration_date})` : '';
+          return `- ${p.name}: ${p.quantity} ${p.unit} [${p.location}]${exp}`;
         })
         .join('\n')
     : 'No pantry items tracked.';
@@ -140,22 +151,25 @@ Rules:
     .filter(Boolean)
     .join('\n');
 
-  const userMessage = `Please create a meal plan with the following details:
+  const userMessage = `Create a meal plan using ONLY recipes from my cookbook.
 
 STORE PREFERENCE: ${storeName}
 NUMBER OF MEALS: ${numMeals}
 NUMBER OF PEOPLE: ${numPeople}
 
-AVAILABLE SALE ITEMS:
+MY COOKBOOK (select from these only):
+${cookbookList}
+
+AVAILABLE SALE ITEMS (prefer recipes using these):
 ${saleItemsList}
 
-PANTRY ITEMS (use expiring items first):
+PANTRY ITEMS (prefer recipes using expiring items):
 ${pantryList}
 
 PREFERENCES:
 ${dietaryInfo}
 
-Generate exactly ${numMeals} meals distributed across the week. Prioritize using the sale items and expiring pantry items. Plan strategically so that cooking extra on some meals provides leftovers for others.`;
+Select ${numMeals} meals from my cookbook, distributed across the week. Prefer recipes whose ingredients match the sale items. Plan leftovers strategically.`;
 
   const response = await client.messages.create({
     model: 'claude-sonnet-4-20250514',
@@ -174,7 +188,6 @@ Generate exactly ${numMeals} meals distributed across the week. Prioritize using
     throw new Error('No text response from Claude');
   }
 
-  // Extract JSON from the response (handle possible markdown wrapping)
   let jsonText = textContent.text.trim();
   if (jsonText.startsWith('```')) {
     jsonText = jsonText.replace(/^```(?:json)?\n?/, '').replace(/\n?```$/, '');
