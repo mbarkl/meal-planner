@@ -3,7 +3,17 @@
 import { useState, useEffect, useCallback } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
-import { ShoppingCart, RefreshCw, ListChecks, Plus } from "lucide-react";
+import { ShoppingCart, RefreshCw, ListChecks, Plus, Store } from "lucide-react";
+import { Input } from "@/components/ui/input";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+  DialogFooter,
+  DialogClose,
+} from "@/components/ui/dialog";
 import { toast } from "sonner";
 import ShoppingListView from "@/components/shopping-list/ShoppingListView";
 import type { ShoppingList, ShoppingListItem, MealPlan } from "@/lib/types";
@@ -14,6 +24,12 @@ export default function ShoppingListPage() {
   const [list, setList] = useState<ShoppingListWithItems | null>(null);
   const [loading, setLoading] = useState(true);
   const [generating, setGenerating] = useState(false);
+  const [addDialogOpen, setAddDialogOpen] = useState(false);
+  const [newItemName, setNewItemName] = useState("");
+  const [newItemStore, setNewItemStore] = useState("");
+  const [newItemQty, setNewItemQty] = useState("");
+  const [newItemUnit, setNewItemUnit] = useState("");
+  const [addingItem, setAddingItem] = useState(false);
 
   const fetchList = useCallback(async () => {
     try {
@@ -139,6 +155,39 @@ export default function ShoppingListPage() {
     }
   }
 
+  async function handleAddFirstItem() {
+    if (!newItemName.trim()) return;
+    setAddingItem(true);
+    try {
+      const res = await fetch("/api/shopping-list", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          create_list: true,
+          ingredient_name: newItemName.trim(),
+          quantity: newItemQty ? parseFloat(newItemQty) : null,
+          unit: newItemUnit || null,
+          store: newItemStore.trim() || null,
+          category: "other",
+        }),
+      });
+
+      if (!res.ok) throw new Error("Failed to create list");
+
+      await fetchList();
+      toast.success("Shopping list created!");
+      setAddDialogOpen(false);
+      setNewItemName("");
+      setNewItemStore("");
+      setNewItemQty("");
+      setNewItemUnit("");
+    } catch {
+      toast.error("Failed to create shopping list");
+    } finally {
+      setAddingItem(false);
+    }
+  }
+
   async function handleItemDelete(id: string) {
     try {
       const res = await fetch(`/api/shopping-list?id=${id}`, {
@@ -204,55 +253,114 @@ export default function ShoppingListPage() {
           onItemDelete={handleItemDelete}
         />
       ) : (
-        <Card>
-          <CardContent className="flex flex-col items-center justify-center py-12 text-center">
-            <ShoppingCart className="h-10 w-10 text-muted-foreground mb-3" />
-            <p className="text-sm font-medium mb-1">No shopping list yet</p>
-            <p className="text-sm text-muted-foreground mb-4">
-              Add items manually or generate from your meal plan.
-            </p>
-            <div className="flex gap-2">
-              <Button
-                variant="outline"
-                onClick={async () => {
-                  try {
-                    const res = await fetch("/api/shopping-list", {
-                      method: "POST",
-                      headers: { "Content-Type": "application/json" },
-                      body: JSON.stringify({
-                        create_list: true,
-                        ingredient_name: "First item (edit me)",
-                        category: "other",
-                      }),
-                    });
-                    if (res.ok) {
-                      await fetchList();
-                      toast.success("Shopping list created! Add your items.");
-                    }
-                  } catch {
-                    toast.error("Failed to create shopping list");
-                  }
-                }}
-              >
-                <Plus className="h-4 w-4 mr-1" />
-                Start New List
-              </Button>
-              <Button onClick={handleGenerate} disabled={generating}>
-                {generating ? (
-                  <>
-                    <RefreshCw className="h-4 w-4 mr-1 animate-spin" />
-                    Generating...
-                  </>
-                ) : (
-                  <>
-                    <ListChecks className="h-4 w-4 mr-1" />
-                    From Meal Plan
-                  </>
-                )}
-              </Button>
-            </div>
-          </CardContent>
-        </Card>
+        <>
+          <Card>
+            <CardContent className="flex flex-col items-center justify-center py-12 text-center">
+              <ShoppingCart className="h-10 w-10 text-muted-foreground mb-3" />
+              <p className="text-sm font-medium mb-1">No shopping list yet</p>
+              <p className="text-sm text-muted-foreground mb-4">
+                Add items manually or generate from your meal plan.
+              </p>
+              <div className="flex gap-2">
+                <Button
+                  variant="outline"
+                  onClick={() => setAddDialogOpen(true)}
+                >
+                  <Plus className="h-4 w-4 mr-1" />
+                  Add First Item
+                </Button>
+                <Button onClick={handleGenerate} disabled={generating}>
+                  {generating ? (
+                    <>
+                      <RefreshCw className="h-4 w-4 mr-1 animate-spin" />
+                      Generating...
+                    </>
+                  ) : (
+                    <>
+                      <ListChecks className="h-4 w-4 mr-1" />
+                      From Meal Plan
+                    </>
+                  )}
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Add First Item Dialog (when no list exists yet) */}
+          <Dialog open={addDialogOpen} onOpenChange={setAddDialogOpen}>
+            <DialogContent>
+              <DialogHeader>
+                <DialogTitle>Add Item</DialogTitle>
+                <DialogDescription>
+                  Add your first item to start a new shopping list.
+                </DialogDescription>
+              </DialogHeader>
+              <div className="space-y-3">
+                <div>
+                  <label htmlFor="first-item-name" className="text-sm font-medium mb-1 block">
+                    Item Name
+                  </label>
+                  <Input
+                    id="first-item-name"
+                    placeholder="e.g. Chicken Breast"
+                    value={newItemName}
+                    onChange={(e) => setNewItemName(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" && newItemName.trim()) handleAddFirstItem();
+                    }}
+                  />
+                </div>
+                <div>
+                  <label htmlFor="first-item-store" className="text-sm font-medium mb-1 block">
+                    Store
+                  </label>
+                  <Input
+                    id="first-item-store"
+                    placeholder="e.g. Fry's, Costco, Trader Joe's"
+                    value={newItemStore}
+                    onChange={(e) => setNewItemStore(e.target.value)}
+                  />
+                </div>
+                <div className="flex gap-2">
+                  <div className="flex-1">
+                    <label htmlFor="first-item-qty" className="text-sm font-medium mb-1 block">
+                      Quantity
+                    </label>
+                    <Input
+                      id="first-item-qty"
+                      type="number"
+                      placeholder="1"
+                      value={newItemQty}
+                      onChange={(e) => setNewItemQty(e.target.value)}
+                    />
+                  </div>
+                  <div className="flex-1">
+                    <label htmlFor="first-item-unit" className="text-sm font-medium mb-1 block">
+                      Unit
+                    </label>
+                    <Input
+                      id="first-item-unit"
+                      placeholder="e.g. lb, oz"
+                      value={newItemUnit}
+                      onChange={(e) => setNewItemUnit(e.target.value)}
+                    />
+                  </div>
+                </div>
+              </div>
+              <DialogFooter>
+                <DialogClose render={<Button variant="outline" />}>
+                  Cancel
+                </DialogClose>
+                <Button
+                  onClick={handleAddFirstItem}
+                  disabled={!newItemName.trim() || addingItem}
+                >
+                  {addingItem ? "Adding..." : "Add Item"}
+                </Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
+        </>
       )}
     </div>
   );
