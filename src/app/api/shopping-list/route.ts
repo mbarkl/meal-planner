@@ -40,6 +40,7 @@ export async function POST(request: Request) {
     category,
     notes,
     store,
+    estimated_price,
     create_list,
   }: {
     shopping_list_id?: string;
@@ -49,6 +50,7 @@ export async function POST(request: Request) {
     category?: string | null;
     notes?: string | null;
     store?: string | null;
+    estimated_price?: number | null;
     create_list?: boolean;
   } = body;
 
@@ -114,7 +116,7 @@ export async function POST(request: Request) {
       quantity: quantity ?? null,
       unit: unit ?? null,
       category: category ?? 'other',
-      estimated_price: null,
+      estimated_price: estimated_price ?? null,
       deal_id: null,
       is_checked: false,
       is_owned: false,

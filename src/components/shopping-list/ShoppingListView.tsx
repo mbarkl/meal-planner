@@ -42,6 +42,8 @@ interface ShoppingListViewProps {
     unit?: string | null;
     category?: string | null;
     store?: string | null;
+    estimated_price?: number | null;
+    notes?: string | null;
   }) => Promise<void>;
   onItemDelete?: (id: string) => Promise<void>;
 }
@@ -61,6 +63,8 @@ export default function ShoppingListView({
   const [newItemQuantity, setNewItemQuantity] = useState("");
   const [newItemUnit, setNewItemUnit] = useState("");
   const [newItemStore, setNewItemStore] = useState("");
+  const [newItemPrice, setNewItemPrice] = useState("");
+  const [newItemNotes, setNewItemNotes] = useState("");
   const [addingItem, setAddingItem] = useState(false);
 
   const items = list.items || [];
@@ -161,11 +165,15 @@ export default function ShoppingListView({
         unit: newItemUnit || null,
         category: "other",
         store: newItemStore.trim() || null,
+        estimated_price: newItemPrice ? parseFloat(newItemPrice) : null,
+        notes: newItemNotes.trim() || null,
       });
       setNewItemName("");
       setNewItemQuantity("");
       setNewItemUnit("");
       setNewItemStore("");
+      setNewItemPrice("");
+      setNewItemNotes("");
       setDialogOpen(false);
     } finally {
       setAddingItem(false);
@@ -271,6 +279,11 @@ export default function ShoppingListView({
                           <Badge variant="outline" className="text-xs py-0 px-1.5">
                             {item.store}
                           </Badge>
+                        )}
+                        {item.notes && (
+                          <span className="text-xs text-muted-foreground italic">
+                            {item.notes}
+                          </span>
                         )}
                       </div>
                       <div className="flex items-center gap-1.5 shrink-0">
@@ -406,6 +419,37 @@ export default function ShoppingListView({
                   onChange={(e) => setNewItemUnit(e.target.value)}
                 />
               </div>
+              <div className="flex-1">
+                <label
+                  htmlFor="add-item-price"
+                  className="text-sm font-medium mb-1 block"
+                >
+                  Price
+                </label>
+                <Input
+                  id="add-item-price"
+                  type="number"
+                  step="0.01"
+                  min="0"
+                  placeholder="$0.00"
+                  value={newItemPrice}
+                  onChange={(e) => setNewItemPrice(e.target.value)}
+                />
+              </div>
+            </div>
+            <div>
+              <label
+                htmlFor="add-item-notes"
+                className="text-sm font-medium mb-1 block"
+              >
+                Notes
+              </label>
+              <Input
+                id="add-item-notes"
+                placeholder="e.g. Get the organic brand"
+                value={newItemNotes}
+                onChange={(e) => setNewItemNotes(e.target.value)}
+              />
             </div>
           </div>
           <DialogFooter>

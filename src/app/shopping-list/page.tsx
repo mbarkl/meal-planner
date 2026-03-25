@@ -29,6 +29,8 @@ export default function ShoppingListPage() {
   const [newItemStore, setNewItemStore] = useState("");
   const [newItemQty, setNewItemQty] = useState("");
   const [newItemUnit, setNewItemUnit] = useState("");
+  const [newItemPrice, setNewItemPrice] = useState("");
+  const [newItemNotes, setNewItemNotes] = useState("");
   const [addingItem, setAddingItem] = useState(false);
 
   const fetchList = useCallback(async () => {
@@ -120,6 +122,8 @@ export default function ShoppingListPage() {
     unit?: string | null;
     category?: string | null;
     store?: string | null;
+    estimated_price?: number | null;
+    notes?: string | null;
   }) {
     try {
       const res = await fetch("/api/shopping-list", {
@@ -168,6 +172,8 @@ export default function ShoppingListPage() {
           quantity: newItemQty ? parseFloat(newItemQty) : null,
           unit: newItemUnit || null,
           store: newItemStore.trim() || null,
+          estimated_price: newItemPrice ? parseFloat(newItemPrice) : null,
+          notes: newItemNotes.trim() || null,
           category: "other",
         }),
       });
@@ -181,6 +187,8 @@ export default function ShoppingListPage() {
       setNewItemStore("");
       setNewItemQty("");
       setNewItemUnit("");
+      setNewItemPrice("");
+      setNewItemNotes("");
     } catch {
       toast.error("Failed to create shopping list");
     } finally {
@@ -345,6 +353,31 @@ export default function ShoppingListPage() {
                       onChange={(e) => setNewItemUnit(e.target.value)}
                     />
                   </div>
+                  <div className="flex-1">
+                    <label htmlFor="first-item-price" className="text-sm font-medium mb-1 block">
+                      Price
+                    </label>
+                    <Input
+                      id="first-item-price"
+                      type="number"
+                      step="0.01"
+                      min="0"
+                      placeholder="$0.00"
+                      value={newItemPrice}
+                      onChange={(e) => setNewItemPrice(e.target.value)}
+                    />
+                  </div>
+                </div>
+                <div>
+                  <label htmlFor="first-item-notes" className="text-sm font-medium mb-1 block">
+                    Notes
+                  </label>
+                  <Input
+                    id="first-item-notes"
+                    placeholder="e.g. Get the organic brand"
+                    value={newItemNotes}
+                    onChange={(e) => setNewItemNotes(e.target.value)}
+                  />
                 </div>
               </div>
               <DialogFooter>
