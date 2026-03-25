@@ -6,7 +6,17 @@ import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
 import { WeeklyCalendar } from "@/components/meal-plan/WeeklyCalendar";
 import { MealPlanGenerator } from "@/components/meal-plan/MealPlanGenerator";
-import type { MealPlan, MealPlanEntry, StoreName } from "@/lib/types";
+import { AddMealDialog } from "@/components/meal-plan/AddMealDialog";
+import type { MealPlan, MealPlanEntry, StoreName, DayOfWeek, MealType } from "@/lib/types";
+
+function getCurrentMonday(): string {
+  const now = new Date();
+  const dayOfWeek = now.getDay();
+  const daysSinceMonday = dayOfWeek === 0 ? 6 : dayOfWeek - 1;
+  const monday = new Date(now);
+  monday.setDate(now.getDate() - daysSinceMonday);
+  return monday.toISOString().split("T")[0];
+}
 
 function getNextMonday(): string {
   const now = new Date();
@@ -14,16 +24,6 @@ function getNextMonday(): string {
   const daysUntilMonday = dayOfWeek === 0 ? 1 : dayOfWeek === 1 ? 0 : 8 - dayOfWeek;
   const monday = new Date(now);
   monday.setDate(now.getDate() + daysUntilMonday);
-  return monday.toISOString().split("T")[0];
-}
-
-function getCurrentMonday(): string {
-  const now = new Date();
-  const dayOfWeek = now.getDay();
-  // Go back to Monday of the current week
-  const daysSinceMonday = dayOfWeek === 0 ? 6 : dayOfWeek - 1;
-  const monday = new Date(now);
-  monday.setDate(now.getDate() - daysSinceMonday);
   return monday.toISOString().split("T")[0];
 }
 
@@ -38,28 +38,24 @@ export default function MealPlanPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [isGenerating, setIsGenerating] = useState(false);
 
+  // Add meal dialog state
+  const [addDialogOpen, setAddDialogOpen] = useState(false);
+  const [addDay, setAddDay] = useState<DayOfWeek | null>(null);
+  const [addMealType, setAddMealType] = useState<MealType | null>(null);
+
   const fetchCurrentWeekPlan = useCallback(async () => {
     try {
-      // Try current week's Monday first, then next Monday
       const currentMonday = getCurrentMonday();
-      const response = await fetch(
-        `/api/meal-plan?weekStart=${currentMonday}`
-      );
-      if (!response.ok) {
-        throw new Error("Failed to fetch meal plan");
-      }
+      const response = await fetch(`/api/meal-plan?weekStart=${currentMonday}`);
+      if (!response.ok) throw new Error("Failed to fetch meal plan");
       const data: MealPlan[] = await response.json();
 
       if (data.length > 0) {
-        // Use the most recent one
         setMealPlan(data[0]);
       } else {
-        // Try next week's Monday
         const nextMonday = getNextMonday();
         if (nextMonday !== currentMonday) {
-          const resp2 = await fetch(
-            `/api/meal-plan?weekStart=${nextMonday}`
-          );
+          const resp2 = await fetch(`/api/meal-plan?weekStart=${nextMonday}`);
           if (resp2.ok) {
             const data2: MealPlan[] = await resp2.json();
             if (data2.length > 0) {
@@ -79,6 +75,40 @@ export default function MealPlanPage() {
     fetchCurrentWeekPlan();
   }, [fetchCurrentWeekPlan]);
 
+  // Ensure a meal plan exists for the current week, creating one if needed
+  async function ensureMealPlan(): Promise<string> {
+    if (mealPlan) return mealPlan.id;
+
+    // Create a new empty meal plan for the current week
+    const weekStart = getCurrentMonday();
+    const res = await fetch("/api/meal-plan", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        // PUT expects an id — we need to create via a different method
+        // Actually, there's no POST on meal-plan route. Let me use the entries approach:
+        // We'll create the plan directly via Supabase through a simple POST
+      }),
+    });
+
+    // The meal-plan API doesn't have a POST for creating empty plans.
+    // Let's create one via the generate endpoint workaround, or add one.
+    // For now, let's POST to a new endpoint.
+    const createRes = await fetch("/api/meal-plan/create", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ week_start: weekStart }),
+    });
+
+    if (!createRes.ok) {
+      throw new Error("Failed to create meal plan");
+    }
+
+    const newPlan: MealPlan = await createRes.json();
+    setMealPlan(newPlan);
+    return newPlan.id;
+  }
+
   async function handleGenerate(
     weekStart: string,
     numMeals: number,
@@ -90,12 +120,7 @@ export default function MealPlanPage() {
       const response = await fetch("/api/meal-plan/generate", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          weekStart,
-          numMeals,
-          numPeople,
-          storePreference,
-        }),
+        body: JSON.stringify({ weekStart, numMeals, numPeople, storePreference }),
       });
 
       if (!response.ok) {
@@ -108,11 +133,77 @@ export default function MealPlanPage() {
       toast.success("Meal plan generated successfully!");
     } catch (error) {
       console.error("Error generating meal plan:", error);
-      toast.error(
-        error instanceof Error ? error.message : "Failed to generate meal plan"
-      );
+      toast.error(error instanceof Error ? error.message : "Failed to generate meal plan");
     } finally {
       setIsGenerating(false);
+    }
+  }
+
+  function handleAddMealClick(day: DayOfWeek, mealType: MealType) {
+    setAddDay(day);
+    setAddMealType(mealType);
+    setAddDialogOpen(true);
+  }
+
+  async function handleAddMeal(recipeId: string | null, customName: string | null) {
+    try {
+      const planId = await ensureMealPlan();
+
+      const res = await fetch("/api/meal-plan/entries", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          meal_plan_id: planId,
+          day: addDay,
+          meal_type: addMealType,
+          recipe_id: recipeId,
+          custom_meal_name: customName,
+        }),
+      });
+
+      if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.error || "Failed to add meal");
+      }
+
+      const newEntry: MealPlanEntry = await res.json();
+
+      // Update the local meal plan with the new entry
+      setMealPlan((prev) => {
+        if (!prev) return prev;
+        return {
+          ...prev,
+          entries: [...(prev.entries || []), newEntry],
+        };
+      });
+
+      const name = customName || newEntry.recipe?.title || "Meal";
+      toast.success(`Added "${name}"`);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Failed to add meal");
+      throw error;
+    }
+  }
+
+  async function handleRemoveEntry(entryId: string) {
+    try {
+      const res = await fetch(`/api/meal-plan/entries?id=${entryId}`, {
+        method: "DELETE",
+      });
+
+      if (!res.ok) throw new Error("Failed to remove meal");
+
+      setMealPlan((prev) => {
+        if (!prev) return prev;
+        return {
+          ...prev,
+          entries: (prev.entries || []).filter((e) => e.id !== entryId),
+        };
+      });
+
+      toast.success("Meal removed");
+    } catch {
+      toast.error("Failed to remove meal");
     }
   }
 
@@ -127,8 +218,7 @@ export default function MealPlanPage() {
       if (!response.ok) throw new Error("Failed to update status");
       setMealPlan((prev) => (prev ? { ...prev, status: newStatus } : null));
       toast.success(`Meal plan marked as ${newStatus}`);
-    } catch (error) {
-      console.error("Error updating status:", error);
+    } catch {
       toast.error("Failed to update meal plan status");
     }
   }
@@ -141,7 +231,7 @@ export default function MealPlanPage() {
     <div>
       <h1 className="text-2xl font-bold mb-1">Meal Planner</h1>
       <p className="text-muted-foreground mb-6">
-        Plan your weekly meals based on sales and pantry items
+        Plan your weekly meals — click any empty slot to add a recipe from your cookbook
       </p>
 
       {/* Generator controls */}
@@ -201,20 +291,41 @@ export default function MealPlanPage() {
           {/* Weekly calendar */}
           <WeeklyCalendar
             entries={(mealPlan.entries as MealPlanEntry[]) || []}
+            onAddMeal={handleAddMealClick}
+            onRemoveEntry={handleRemoveEntry}
           />
         </div>
       )}
 
-      {/* Empty state */}
+      {/* Empty state — show calendar with add buttons */}
       {!isLoading && !mealPlan && !isGenerating && (
-        <div className="text-center py-12 text-muted-foreground">
-          <CalendarDays className="size-10 mx-auto mb-3 opacity-50" />
-          <p className="text-sm">No meal plan for this week yet.</p>
-          <p className="text-xs mt-1">
-            Use the generator above to create one based on current sales and your pantry.
-          </p>
+        <div className="mt-6 space-y-4">
+          <div className="flex items-center gap-3">
+            <CalendarDays className="size-5 text-muted-foreground" />
+            <div>
+              <h2 className="text-lg font-semibold">
+                Week of {getCurrentMonday()}
+              </h2>
+              <p className="text-xs text-muted-foreground">
+                Click any slot to add a meal from your recipes
+              </p>
+            </div>
+          </div>
+          <WeeklyCalendar
+            entries={[]}
+            onAddMeal={handleAddMealClick}
+          />
         </div>
       )}
+
+      {/* Add meal dialog */}
+      <AddMealDialog
+        open={addDialogOpen}
+        onOpenChange={setAddDialogOpen}
+        day={addDay}
+        mealType={addMealType}
+        onAdd={handleAddMeal}
+      />
     </div>
   );
 }

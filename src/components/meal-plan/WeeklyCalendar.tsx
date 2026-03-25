@@ -1,9 +1,10 @@
 "use client";
 
 import { useState } from "react";
-import { Clock, Repeat, UtensilsCrossed } from "lucide-react";
+import { Clock, Plus, Repeat, Trash2, UtensilsCrossed } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import {
   Dialog,
   DialogContent,
@@ -17,6 +18,8 @@ import { DAYS_OF_WEEK, MEAL_TYPES } from "@/lib/types";
 interface WeeklyCalendarProps {
   entries: MealPlanEntry[];
   onViewRecipe?: (recipe: Recipe) => void;
+  onAddMeal?: (day: DayOfWeek, mealType: MealType) => void;
+  onRemoveEntry?: (entryId: string) => void;
 }
 
 const DAY_LABELS: Record<DayOfWeek, string> = {
@@ -39,7 +42,7 @@ const MEAL_TYPE_LABELS: Record<MealType, string> = {
 // Only show main meal rows (breakfast, lunch, dinner)
 const CALENDAR_MEAL_TYPES: MealType[] = ["breakfast", "lunch", "dinner"];
 
-export function WeeklyCalendar({ entries, onViewRecipe }: WeeklyCalendarProps) {
+export function WeeklyCalendar({ entries, onViewRecipe, onAddMeal, onRemoveEntry }: WeeklyCalendarProps) {
   const [selectedRecipe, setSelectedRecipe] = useState<Recipe | null>(null);
   const [dialogOpen, setDialogOpen] = useState(false);
 
@@ -110,29 +113,51 @@ export function WeeklyCalendar({ entries, onViewRecipe }: WeeklyCalendarProps) {
                   <div key={`${day}-${mealType}`} className="min-h-[80px]">
                     {cellEntries.length > 0 ? (
                       cellEntries.map((entry) => (
-                        <button
+                        <div
                           key={entry.id}
-                          onClick={() => handleMealClick(entry)}
-                          className="w-full text-left p-2 rounded-lg border border-border bg-card hover:bg-muted/50 transition-colors cursor-pointer h-full"
+                          className="relative group w-full text-left p-2 rounded-lg border border-border bg-card hover:bg-muted/50 transition-colors h-full"
                         >
-                          <div className="flex items-start gap-1">
-                            <span className="text-xs font-medium leading-tight line-clamp-2 flex-1">
-                              {getMealTitle(entry)}
-                            </span>
-                            {entry.is_leftover && (
-                              <Repeat className="size-3 text-amber-500 shrink-0 mt-0.5" />
-                            )}
-                          </div>
-                          {getPrepTime(entry) && (
-                            <div className="flex items-center gap-1 mt-1 text-muted-foreground">
-                              <Clock className="size-3" />
-                              <span className="text-[10px]">
-                                {getPrepTime(entry)}m
+                          <button
+                            onClick={() => handleMealClick(entry)}
+                            className="w-full text-left cursor-pointer"
+                          >
+                            <div className="flex items-start gap-1">
+                              <span className="text-xs font-medium leading-tight line-clamp-2 flex-1">
+                                {getMealTitle(entry)}
                               </span>
+                              {entry.is_leftover && (
+                                <Repeat className="size-3 text-amber-500 shrink-0 mt-0.5" />
+                              )}
                             </div>
+                            {getPrepTime(entry) && (
+                              <div className="flex items-center gap-1 mt-1 text-muted-foreground">
+                                <Clock className="size-3" />
+                                <span className="text-[10px]">
+                                  {getPrepTime(entry)}m
+                                </span>
+                              </div>
+                            )}
+                          </button>
+                          {onRemoveEntry && (
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                onRemoveEntry(entry.id);
+                              }}
+                              className="absolute top-1 right-1 opacity-0 group-hover:opacity-100 transition-opacity p-0.5 rounded hover:bg-destructive/10 text-muted-foreground hover:text-destructive"
+                            >
+                              <Trash2 className="size-3" />
+                            </button>
                           )}
-                        </button>
+                        </div>
                       ))
+                    ) : onAddMeal ? (
+                      <button
+                        onClick={() => onAddMeal(day, mealType)}
+                        className="w-full h-full min-h-[80px] rounded-lg border border-dashed border-border/50 flex items-center justify-center hover:border-primary/50 hover:bg-primary/5 transition-colors cursor-pointer group"
+                      >
+                        <Plus className="size-4 text-muted-foreground/30 group-hover:text-primary/50 transition-colors" />
+                      </button>
                     ) : (
                       <div className="w-full h-full min-h-[80px] rounded-lg border border-dashed border-border/50 flex items-center justify-center">
                         <span className="text-[10px] text-muted-foreground/50">
@@ -152,43 +177,67 @@ export function WeeklyCalendar({ entries, onViewRecipe }: WeeklyCalendarProps) {
       <div className="lg:hidden space-y-4">
         {DAYS_OF_WEEK.map((day) => {
           const dayEntries = entries.filter((e) => e.day === day);
-          if (dayEntries.length === 0) return null;
           return (
             <div key={day}>
-              <h3 className="text-sm font-semibold mb-2 capitalize">
-                {day}
-              </h3>
-              <div className="space-y-1.5">
-                {dayEntries.map((entry) => (
-                  <button
-                    key={entry.id}
-                    onClick={() => handleMealClick(entry)}
-                    className="w-full text-left p-3 rounded-lg border border-border bg-card hover:bg-muted/50 transition-colors cursor-pointer"
+              <div className="flex items-center justify-between mb-2">
+                <h3 className="text-sm font-semibold capitalize">{day}</h3>
+                {onAddMeal && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="h-7 text-xs"
+                    onClick={() => onAddMeal(day, "dinner")}
                   >
-                    <div className="flex items-center justify-between gap-2">
-                      <div className="flex items-center gap-2 min-w-0">
-                        <Badge variant="secondary" className="shrink-0 text-[10px]">
-                          {MEAL_TYPE_LABELS[entry.meal_type]}
-                        </Badge>
-                        <span className="text-sm font-medium truncate">
-                          {getMealTitle(entry)}
-                        </span>
-                      </div>
-                      <div className="flex items-center gap-2 shrink-0">
-                        {entry.is_leftover && (
-                          <Repeat className="size-3.5 text-amber-500" />
-                        )}
-                        {getPrepTime(entry) && (
-                          <span className="text-xs text-muted-foreground flex items-center gap-1">
-                            <Clock className="size-3" />
-                            {getPrepTime(entry)}m
-                          </span>
-                        )}
-                      </div>
-                    </div>
-                  </button>
-                ))}
+                    <Plus className="size-3 mr-1" />
+                    Add
+                  </Button>
+                )}
               </div>
+              {dayEntries.length > 0 ? (
+                <div className="space-y-1.5">
+                  {dayEntries.map((entry) => (
+                    <div
+                      key={entry.id}
+                      className="flex items-center gap-2 p-3 rounded-lg border border-border bg-card"
+                    >
+                      <button
+                        onClick={() => handleMealClick(entry)}
+                        className="flex-1 text-left flex items-center justify-between gap-2 cursor-pointer"
+                      >
+                        <div className="flex items-center gap-2 min-w-0">
+                          <Badge variant="secondary" className="shrink-0 text-[10px]">
+                            {MEAL_TYPE_LABELS[entry.meal_type]}
+                          </Badge>
+                          <span className="text-sm font-medium truncate">
+                            {getMealTitle(entry)}
+                          </span>
+                        </div>
+                        <div className="flex items-center gap-2 shrink-0">
+                          {entry.is_leftover && (
+                            <Repeat className="size-3.5 text-amber-500" />
+                          )}
+                          {getPrepTime(entry) && (
+                            <span className="text-xs text-muted-foreground flex items-center gap-1">
+                              <Clock className="size-3" />
+                              {getPrepTime(entry)}m
+                            </span>
+                          )}
+                        </div>
+                      </button>
+                      {onRemoveEntry && (
+                        <button
+                          onClick={() => onRemoveEntry(entry.id)}
+                          className="p-1 rounded hover:bg-destructive/10 text-muted-foreground hover:text-destructive shrink-0"
+                        >
+                          <Trash2 className="size-3.5" />
+                        </button>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <p className="text-xs text-muted-foreground/50 pl-1">No meals planned</p>
+              )}
             </div>
           );
         })}
