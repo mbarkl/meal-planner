@@ -178,10 +178,51 @@ export default function MealPlanPage() {
       });
 
       const name = customName || newEntry.recipe?.title || "Meal";
-      toast.success(`Added "${name}"`);
+      const ingredients = newEntry.recipe?.ingredients;
+
+      if (ingredients && ingredients.length > 0) {
+        toast.success(`Added "${name}"`, {
+          action: {
+            label: "Add ingredients to list",
+            onClick: () => addIngredientsToShoppingList(ingredients, name),
+          },
+          duration: 6000,
+        });
+      } else {
+        toast.success(`Added "${name}"`);
+      }
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Failed to add meal");
       throw error;
+    }
+  }
+
+  async function addIngredientsToShoppingList(
+    ingredients: { ingredient_name: string; quantity: number | null; unit: string | null }[],
+    recipeName: string
+  ) {
+    let added = 0;
+    for (const ing of ingredients) {
+      try {
+        await fetch("/api/shopping-list", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            create_list: true,
+            ingredient_name: ing.ingredient_name,
+            quantity: ing.quantity,
+            unit: ing.unit,
+            notes: `For: ${recipeName}`,
+            category: "other",
+          }),
+        });
+        added++;
+      } catch {
+        // continue with remaining ingredients
+      }
+    }
+    if (added > 0) {
+      toast.success(`Added ${added} ingredient${added !== 1 ? "s" : ""} to shopping list`);
     }
   }
 
