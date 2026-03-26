@@ -65,29 +65,43 @@ export async function POST(request: Request) {
 
   let listId = shopping_list_id;
 
-  // If no list exists, create one
+  // If no list ID given, find an existing active list or create one
   if (!listId && create_list) {
-    const now = new Date();
-    const dayOfWeek = now.getDay();
-    const daysToWed = dayOfWeek >= 3 ? dayOfWeek - 3 : dayOfWeek + 4;
-    const lastWednesday = new Date(now);
-    lastWednesday.setDate(now.getDate() - daysToWed);
-    const weekStartStr = lastWednesday.toISOString().split('T')[0];
-
-    const { data: newList, error: listError } = await supabase
+    // First, try to find the most recent active shopping list
+    const { data: existingList } = await supabase
       .from('shopping_lists')
-      .insert({
-        week_start: weekStartStr,
-        store: null,
-        status: 'active',
-      })
-      .select()
+      .select('id')
+      .eq('status', 'active')
+      .order('created_at', { ascending: false })
+      .limit(1)
       .single();
 
-    if (listError) {
-      return NextResponse.json({ error: listError.message }, { status: 500 });
+    if (existingList) {
+      listId = existingList.id;
+    } else {
+      // No active list exists — create a new one
+      const now = new Date();
+      const dayOfWeek = now.getDay();
+      const daysToWed = dayOfWeek >= 3 ? dayOfWeek - 3 : dayOfWeek + 4;
+      const lastWednesday = new Date(now);
+      lastWednesday.setDate(now.getDate() - daysToWed);
+      const weekStartStr = lastWednesday.toISOString().split('T')[0];
+
+      const { data: newList, error: listError } = await supabase
+        .from('shopping_lists')
+        .insert({
+          week_start: weekStartStr,
+          store: null,
+          status: 'active',
+        })
+        .select()
+        .single();
+
+      if (listError) {
+        return NextResponse.json({ error: listError.message }, { status: 500 });
+      }
+      listId = newList.id;
     }
-    listId = newList.id;
   }
 
   if (!listId) {
