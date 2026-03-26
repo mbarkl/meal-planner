@@ -93,7 +93,7 @@ export default function ShoppingListView({
         groups[category] = categoryItems.sort((a, b) => {
           if (a.is_checked !== b.is_checked) return a.is_checked ? 1 : -1;
           if (a.is_owned !== b.is_owned) return a.is_owned ? 1 : -1;
-          return a.sort_order - b.sort_order;
+          return a.ingredient_name.localeCompare(b.ingredient_name);
         });
       }
     }
@@ -106,7 +106,7 @@ export default function ShoppingListView({
     const sortedItems = [...items].sort((a, b) => {
       if (a.is_checked !== b.is_checked) return a.is_checked ? 1 : -1;
       if (a.is_owned !== b.is_owned) return a.is_owned ? 1 : -1;
-      return a.sort_order - b.sort_order;
+      return a.ingredient_name.localeCompare(b.ingredient_name);
     });
 
     for (const item of sortedItems) {
