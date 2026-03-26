@@ -119,48 +119,65 @@ export async function POST(request: Request) {
       });
     }
 
-    // Delete any existing shopping list for this meal plan
-    const { data: existingLists } = await supabase
+    // Find an existing active shopping list to merge into, or create one
+    let listId: string;
+
+    // First try: find the most recent active list
+    const { data: existingList } = await supabase
       .from('shopping_lists')
       .select('id')
-      .eq('meal_plan_id', mealPlanId);
-
-    if (existingLists && existingLists.length > 0) {
-      for (const existing of existingLists) {
-        await supabase
-          .from('shopping_list_items')
-          .delete()
-          .eq('shopping_list_id', existing.id);
-      }
-      await supabase
-        .from('shopping_lists')
-        .delete()
-        .eq('meal_plan_id', mealPlanId);
-    }
-
-    // Create the shopping list
-    const { data: shoppingList, error: listError } = await supabase
-      .from('shopping_lists')
-      .insert({
-        meal_plan_id: mealPlanId,
-        week_start: mealPlan.week_start,
-        store: mealPlan.store_preference || null,
-        status: 'active',
-      })
-      .select()
+      .eq('status', 'active')
+      .order('created_at', { ascending: false })
+      .limit(1)
       .single();
 
-    if (listError || !shoppingList) {
-      return NextResponse.json(
-        { error: `Failed to create shopping list: ${listError?.message}` },
-        { status: 500 }
-      );
+    if (existingList) {
+      listId = existingList.id;
+    } else {
+      // No active list — create a new one
+      const { data: newList, error: listError } = await supabase
+        .from('shopping_lists')
+        .insert({
+          meal_plan_id: mealPlanId,
+          week_start: mealPlan.week_start,
+          store: mealPlan.store_preference || null,
+          status: 'active',
+        })
+        .select()
+        .single();
+
+      if (listError || !newList) {
+        return NextResponse.json(
+          { error: `Failed to create shopping list: ${listError?.message}` },
+          { status: 500 }
+        );
+      }
+      listId = newList.id;
     }
+
+    // Get existing item names so we don't add duplicates
+    const { data: existingItems } = await supabase
+      .from('shopping_list_items')
+      .select('ingredient_name')
+      .eq('shopping_list_id', listId);
+
+    const existingNames = new Set(
+      (existingItems || []).map((i) => i.ingredient_name.toLowerCase().trim())
+    );
+
+    // Get max sort_order from existing items so new items come after
+    const { data: maxSortItem } = await supabase
+      .from('shopping_list_items')
+      .select('sort_order')
+      .eq('shopping_list_id', listId)
+      .order('sort_order', { ascending: false })
+      .limit(1)
+      .single();
 
     // Assign categories based on AISLE_ORDER, matching ingredient names to deal categories
     // and create shopping list items
     const items: Array<Omit<ShoppingListItem, 'id'>> = [];
-    let sortOrder = 0;
+    let sortOrder = (maxSortItem?.sort_order ?? -1) + 1;
 
     // Group by category using AISLE_ORDER
     for (const category of AISLE_ORDER) {
@@ -185,7 +202,7 @@ export async function POST(request: Request) {
         const isOwned = pantryNames.has(key);
 
         items.push({
-          shopping_list_id: shoppingList.id,
+          shopping_list_id: listId,
           ingredient_name: ing.ingredient_name,
           quantity: ing.quantity,
           unit: ing.unit,
@@ -221,7 +238,7 @@ export async function POST(request: Request) {
         const isOwned = pantryNames.has(key);
 
         items.push({
-          shopping_list_id: shoppingList.id,
+          shopping_list_id: listId,
           ingredient_name: ing.ingredient_name,
           quantity: ing.quantity,
           unit: ing.unit,
@@ -238,11 +255,16 @@ export async function POST(request: Request) {
       }
     }
 
-    // Insert all items
-    if (items.length > 0) {
+    // Filter out items that already exist on the list (by ingredient name)
+    const newItems = items.filter(
+      (item) => !existingNames.has(item.ingredient_name.toLowerCase().trim())
+    );
+
+    // Insert only new items
+    if (newItems.length > 0) {
       const { error: itemsError } = await supabase
         .from('shopping_list_items')
-        .insert(items);
+        .insert(newItems);
 
       if (itemsError) {
         return NextResponse.json(
@@ -256,7 +278,7 @@ export async function POST(request: Request) {
     const { data: completeList, error: fetchError } = await supabase
       .from('shopping_lists')
       .select('*, items:shopping_list_items(*)')
-      .eq('id', shoppingList.id)
+      .eq('id', listId)
       .single();
 
     if (fetchError) {
