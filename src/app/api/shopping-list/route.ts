@@ -209,7 +209,26 @@ export async function PUT(request: Request) {
 export async function DELETE(request: Request) {
   const { searchParams } = new URL(request.url);
   const id = searchParams.get('id');
+  const clearAll = searchParams.get('clear_all');
+  const listId = searchParams.get('list_id');
 
+  const supabase = createServerClient();
+
+  // Clear all items from a list
+  if (clearAll === 'true' && listId) {
+    const { error } = await supabase
+      .from('shopping_list_items')
+      .delete()
+      .eq('shopping_list_id', listId);
+
+    if (error) {
+      return NextResponse.json({ error: error.message }, { status: 500 });
+    }
+
+    return NextResponse.json({ success: true, cleared: true });
+  }
+
+  // Delete a single item
   if (!id) {
     return NextResponse.json(
       { error: 'Missing shopping list item id' },
@@ -217,7 +236,6 @@ export async function DELETE(request: Request) {
     );
   }
 
-  const supabase = createServerClient();
   const { error } = await supabase
     .from('shopping_list_items')
     .delete()

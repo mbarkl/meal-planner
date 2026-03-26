@@ -236,6 +236,16 @@ export default function ShoppingListPage() {
     }
   }
 
+  async function handleClearAll() {
+    if (!list) return;
+    const res = await fetch(
+      `/api/shopping-list?clear_all=true&list_id=${list.id}`,
+      { method: "DELETE" }
+    );
+    if (!res.ok) throw new Error("Failed to clear list");
+    setList((prev) => (prev ? { ...prev, items: [] } : prev));
+  }
+
   async function handleItemDelete(id: string) {
     try {
       const res = await fetch(`/api/shopping-list?id=${id}`, {
@@ -300,6 +310,7 @@ export default function ShoppingListPage() {
           onItemAdd={handleItemAdd}
           onItemDelete={handleItemDelete}
           onMoveToPantry={handleMoveToPantry}
+          onClearAll={handleClearAll}
         />
       ) : (
         <>

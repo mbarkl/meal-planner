@@ -49,6 +49,7 @@ interface ShoppingListViewProps {
   }) => Promise<void>;
   onItemDelete?: (id: string) => Promise<void>;
   onMoveToPantry?: (item: ShoppingListItem) => Promise<void>;
+  onClearAll?: () => Promise<void>;
 }
 
 export default function ShoppingListView({
@@ -57,12 +58,15 @@ export default function ShoppingListView({
   onItemAdd,
   onItemDelete,
   onMoveToPantry,
+  onClearAll,
 }: ShoppingListViewProps) {
   const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(
     new Set()
   );
   const [groupMode, setGroupMode] = useState<GroupMode>("category");
   const [dialogOpen, setDialogOpen] = useState(false);
+  const [clearConfirmOpen, setClearConfirmOpen] = useState(false);
+  const [clearing, setClearing] = useState(false);
   const [newItemName, setNewItemName] = useState("");
   const [newItemQuantity, setNewItemQuantity] = useState("");
   const [newItemUnit, setNewItemUnit] = useState("");
@@ -219,6 +223,17 @@ export default function ShoppingListView({
             <Plus className="h-4 w-4 mr-1" />
             Add Item
           </Button>
+          {onClearAll && items.length > 0 && (
+            <Button
+              variant="outline"
+              size="sm"
+              className="text-destructive hover:text-destructive"
+              onClick={() => setClearConfirmOpen(true)}
+            >
+              <Trash2 className="h-3.5 w-3.5 mr-1" />
+              Clear All
+            </Button>
+          )}
         </div>
       </div>
 
@@ -478,6 +493,42 @@ export default function ShoppingListView({
               disabled={!newItemName.trim() || addingItem}
             >
               {addingItem ? "Adding..." : "Add Item"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Clear All Confirmation Dialog */}
+      <Dialog open={clearConfirmOpen} onOpenChange={setClearConfirmOpen}>
+        <DialogContent className="sm:max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Clear Shopping List?</DialogTitle>
+            <DialogDescription>
+              This will remove all {items.length} item{items.length !== 1 ? "s" : ""} from your shopping list. This cannot be undone.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter className="gap-2">
+            <DialogClose render={<Button variant="outline" />}>
+              Cancel
+            </DialogClose>
+            <Button
+              variant="destructive"
+              disabled={clearing}
+              onClick={async () => {
+                if (!onClearAll) return;
+                setClearing(true);
+                try {
+                  await onClearAll();
+                  setClearConfirmOpen(false);
+                  toast.success("Shopping list cleared");
+                } catch {
+                  toast.error("Failed to clear list");
+                } finally {
+                  setClearing(false);
+                }
+              }}
+            >
+              {clearing ? "Clearing..." : "Clear All"}
             </Button>
           </DialogFooter>
         </DialogContent>
