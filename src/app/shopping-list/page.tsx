@@ -196,6 +196,46 @@ export default function ShoppingListPage() {
     }
   }
 
+  async function handleMoveToPantry(item: ShoppingListItem) {
+    try {
+      // Add to pantry
+      const pantryRes = await fetch("/api/pantry", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: item.ingredient_name,
+          quantity: item.quantity || 1,
+          unit: item.unit || "count",
+          location: "pantry",
+          purchase_date: new Date().toISOString().split("T")[0],
+          purchased_from: item.store || null,
+          is_staple: true,
+        }),
+      });
+
+      if (!pantryRes.ok) throw new Error("Failed to add to pantry");
+
+      // Remove from shopping list
+      const delRes = await fetch(`/api/shopping-list?id=${item.id}`, {
+        method: "DELETE",
+      });
+
+      if (!delRes.ok) throw new Error("Failed to remove from list");
+
+      setList((prev) => {
+        if (!prev) return prev;
+        return {
+          ...prev,
+          items: prev.items.filter((i) => i.id !== item.id),
+        };
+      });
+
+      toast.success(`"${item.ingredient_name}" moved to pantry`);
+    } catch {
+      toast.error("Failed to move item to pantry");
+    }
+  }
+
   async function handleItemDelete(id: string) {
     try {
       const res = await fetch(`/api/shopping-list?id=${id}`, {
@@ -259,6 +299,7 @@ export default function ShoppingListPage() {
           onItemUpdate={handleItemUpdate}
           onItemAdd={handleItemAdd}
           onItemDelete={handleItemDelete}
+          onMoveToPantry={handleMoveToPantry}
         />
       ) : (
         <>

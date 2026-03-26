@@ -24,7 +24,9 @@ import {
   Store,
   Trash2,
   LayoutGrid,
+  Package,
 } from "lucide-react";
+import { toast } from "sonner";
 import { AISLE_ORDER, CATEGORY_DISPLAY } from "@/lib/constants";
 import type { ShoppingList, ShoppingListItem } from "@/lib/types";
 
@@ -46,6 +48,7 @@ interface ShoppingListViewProps {
     notes?: string | null;
   }) => Promise<void>;
   onItemDelete?: (id: string) => Promise<void>;
+  onMoveToPantry?: (item: ShoppingListItem) => Promise<void>;
 }
 
 export default function ShoppingListView({
@@ -53,6 +56,7 @@ export default function ShoppingListView({
   onItemUpdate,
   onItemAdd,
   onItemDelete,
+  onMoveToPantry,
 }: ShoppingListViewProps) {
   const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(
     new Set()
@@ -300,6 +304,17 @@ export default function ShoppingListView({
                           <span className="text-xs text-muted-foreground">
                             Have
                           </span>
+                        )}
+                        {onMoveToPantry && item.is_checked && (
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-6 w-6 text-muted-foreground hover:text-orange-600"
+                            onClick={() => onMoveToPantry(item)}
+                            title="Move to Pantry"
+                          >
+                            <Package className="h-3 w-3" />
+                          </Button>
                         )}
                         {onItemDelete && (
                           <Button
