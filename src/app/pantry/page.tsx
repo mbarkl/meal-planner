@@ -104,6 +104,29 @@ export default function PantryPage() {
     }
   }
 
+  async function handleAddToShoppingList(item: PantryItem) {
+    try {
+      const res = await fetch("/api/shopping-list", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          create_list: true,
+          ingredient_name: item.name,
+          quantity: item.quantity || 1,
+          unit: item.unit || null,
+          category: item.category || "other",
+          notes: `Restock (${item.location})`,
+        }),
+      });
+
+      if (!res.ok) throw new Error("Failed to add to shopping list");
+
+      toast.success(`"${item.name}" added to shopping list`);
+    } catch {
+      toast.error("Failed to add to shopping list");
+    }
+  }
+
   function handleCancel() {
     setDialogOpen(false);
     setEditingItem(undefined);
@@ -142,6 +165,7 @@ export default function PantryPage() {
             items={filterByLocation('pantry')}
             onEdit={handleEdit}
             onDelete={handleDelete}
+            onAddToShoppingList={handleAddToShoppingList}
           />
         </TabsContent>
 
@@ -150,6 +174,7 @@ export default function PantryPage() {
             items={filterByLocation('fridge')}
             onEdit={handleEdit}
             onDelete={handleDelete}
+            onAddToShoppingList={handleAddToShoppingList}
           />
         </TabsContent>
 
@@ -158,6 +183,7 @@ export default function PantryPage() {
             items={filterByLocation('freezer')}
             onEdit={handleEdit}
             onDelete={handleDelete}
+            onAddToShoppingList={handleAddToShoppingList}
           />
         </TabsContent>
       </Tabs>

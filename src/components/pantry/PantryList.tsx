@@ -10,13 +10,14 @@ import {
 } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Pencil, Trash2 } from 'lucide-react';
+import { Pencil, ShoppingCart, Trash2 } from 'lucide-react';
 import type { PantryItem } from '@/lib/types';
 
 interface PantryListProps {
   items: PantryItem[];
   onEdit: (item: PantryItem) => void;
   onDelete: (id: string) => void;
+  onAddToShoppingList?: (item: PantryItem) => void;
 }
 
 function getExpirationColor(expirationDate: string | null): string {
@@ -43,7 +44,7 @@ function formatExpiration(expirationDate: string | null): string {
   });
 }
 
-export function PantryList({ items, onEdit, onDelete }: PantryListProps) {
+export function PantryList({ items, onEdit, onDelete, onAddToShoppingList }: PantryListProps) {
   if (items.length === 0) {
     return (
       <p className="py-8 text-center text-sm text-muted-foreground">
@@ -80,6 +81,16 @@ export function PantryList({ items, onEdit, onDelete }: PantryListProps) {
             </TableCell>
             <TableCell className="text-right">
               <div className="flex justify-end gap-1">
+                {onAddToShoppingList && (
+                  <Button
+                    variant="ghost"
+                    size="icon-sm"
+                    onClick={() => onAddToShoppingList(item)}
+                    title="Add to Shopping List"
+                  >
+                    <ShoppingCart className="size-3.5" />
+                  </Button>
+                )}
                 <Button
                   variant="ghost"
                   size="icon-sm"
