@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { createServerClient } from '@/lib/supabase/server';
 import { AISLE_ORDER } from '@/lib/constants';
+import { categorizeIngredient } from '@/lib/categorize-ingredient';
 import type { ShoppingListItem, UnitType } from '@/lib/types';
 
 interface AggregatedIngredient {
@@ -81,7 +82,7 @@ export async function POST(request: Request) {
             ingredient_name: ing.ingredient_name,
             quantity: ing.quantity,
             unit: ing.unit as UnitType | null,
-            category: 'other', // default category
+            category: categorizeIngredient(ing.ingredient_name),
           });
         }
       }

@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { createServerClient } from '@/lib/supabase/server';
+import { categorizeIngredient } from '@/lib/categorize-ingredient';
 
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
@@ -25,6 +26,30 @@ export async function GET(request: Request) {
       return NextResponse.json(null);
     }
     return NextResponse.json({ error: error.message }, { status: 500 });
+  }
+
+  // Auto-recategorize any items stuck in "other" that could be better categorized
+  if (data?.items) {
+    const updates: { id: string; category: string }[] = [];
+    for (const item of data.items) {
+      if (!item.category || item.category === 'other') {
+        const better = categorizeIngredient(item.ingredient_name);
+        if (better !== 'other') {
+          updates.push({ id: item.id, category: better });
+          item.category = better; // update in response too
+        }
+      }
+    }
+    // Fire and forget — update in background
+    if (updates.length > 0) {
+      for (const u of updates) {
+        supabase
+          .from('shopping_list_items')
+          .update({ category: u.category })
+          .eq('id', u.id)
+          .then(() => {});
+      }
+    }
   }
 
   return NextResponse.json(data);
@@ -129,7 +154,7 @@ export async function POST(request: Request) {
       ingredient_name,
       quantity: quantity ?? null,
       unit: unit ?? null,
-      category: category ?? 'other',
+      category: (category && category !== 'other') ? category : categorizeIngredient(ingredient_name),
       estimated_price: estimated_price ?? null,
       deal_id: null,
       is_checked: false,
