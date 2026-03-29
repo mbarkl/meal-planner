@@ -246,6 +246,34 @@ export default function ShoppingListPage() {
     setList((prev) => (prev ? { ...prev, items: [] } : prev));
   }
 
+  async function handleMergeItems(
+    keepId: string,
+    deleteIds: string[],
+    mergedName: string,
+    mergedQty: number | null,
+    mergedUnit: string | null
+  ) {
+    const res = await fetch('/api/shopping-list/merge', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ keepId, deleteIds, mergedName, mergedQty, mergedUnit }),
+    });
+    if (!res.ok) throw new Error('Failed to merge items');
+
+    setList((prev) => {
+      if (!prev) return prev;
+      const remaining = prev.items.filter((i) => !deleteIds.includes(i.id));
+      return {
+        ...prev,
+        items: remaining.map((i) =>
+          i.id === keepId
+            ? { ...i, ingredient_name: mergedName, quantity: mergedQty, unit: mergedUnit as typeof i.unit }
+            : i
+        ),
+      };
+    });
+  }
+
   async function handleItemDelete(id: string) {
     try {
       const res = await fetch(`/api/shopping-list?id=${id}`, {
@@ -311,6 +339,7 @@ export default function ShoppingListPage() {
           onItemDelete={handleItemDelete}
           onMoveToPantry={handleMoveToPantry}
           onClearAll={handleClearAll}
+          onMergeItems={handleMergeItems}
         />
       ) : (
         <>

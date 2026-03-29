@@ -25,7 +25,11 @@ import {
   Trash2,
   LayoutGrid,
   Package,
+  Merge,
+  X,
 } from "lucide-react";
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
+import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
 import { AISLE_ORDER, CATEGORY_DISPLAY } from "@/lib/constants";
 import type { ShoppingList, ShoppingListItem } from "@/lib/types";
@@ -50,6 +54,7 @@ interface ShoppingListViewProps {
   onItemDelete?: (id: string) => Promise<void>;
   onMoveToPantry?: (item: ShoppingListItem) => Promise<void>;
   onClearAll?: () => Promise<void>;
+  onMergeItems?: (keepId: string, deleteIds: string[], mergedName: string, mergedQty: number | null, mergedUnit: string | null) => Promise<void>;
 }
 
 export default function ShoppingListView({
@@ -59,6 +64,7 @@ export default function ShoppingListView({
   onItemDelete,
   onMoveToPantry,
   onClearAll,
+  onMergeItems,
 }: ShoppingListViewProps) {
   const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(
     new Set()
@@ -67,6 +73,12 @@ export default function ShoppingListView({
   const [dialogOpen, setDialogOpen] = useState(false);
   const [clearConfirmOpen, setClearConfirmOpen] = useState(false);
   const [clearing, setClearing] = useState(false);
+  // Merge mode state
+  const [mergeMode, setMergeMode] = useState(false);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [mergeDialogOpen, setMergeDialogOpen] = useState(false);
+  const [merging, setMerging] = useState(false);
+  const [mergeChosenName, setMergeChosenName] = useState("");
   const [newItemName, setNewItemName] = useState("");
   const [newItemQuantity, setNewItemQuantity] = useState("");
   const [newItemUnit, setNewItemUnit] = useState("");
@@ -163,6 +175,58 @@ export default function ShoppingListView({
     return key;
   }
 
+  function toggleMergeMode() {
+    setMergeMode((prev) => !prev);
+    setSelectedIds(new Set());
+  }
+
+  function toggleSelectItem(id: string) {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+
+  // Compute merge preview from selected items
+  const selectedItems = items.filter((i) => selectedIds.has(i.id));
+
+  // Combined quantity: sum if all units match, otherwise null (can't combine)
+  const mergePreview = useMemo(() => {
+    if (selectedItems.length < 2) return null;
+    const units = new Set(selectedItems.map((i) => i.unit ?? ""));
+    const allSameUnit = units.size === 1;
+    const combinedQty = allSameUnit
+      ? selectedItems.reduce((sum, i) => sum + (i.quantity ?? 0), 0)
+      : null;
+    const unit = allSameUnit ? (selectedItems[0].unit ?? null) : null;
+    return { combinedQty, unit };
+  }, [selectedItems]);
+
+  async function handleConfirmMerge() {
+    if (!onMergeItems || selectedItems.length < 2 || !mergeChosenName) return;
+    setMerging(true);
+    try {
+      const [keep, ...rest] = selectedItems;
+      await onMergeItems(
+        keep.id,
+        rest.map((i) => i.id),
+        mergeChosenName,
+        mergePreview?.combinedQty ?? null,
+        mergePreview?.unit ?? null
+      );
+      setMergeDialogOpen(false);
+      setSelectedIds(new Set());
+      setMergeMode(false);
+      toast.success("Items merged");
+    } catch {
+      toast.error("Failed to merge items");
+    } finally {
+      setMerging(false);
+    }
+  }
+
   async function handleAddItem() {
     if (!newItemName.trim()) return;
     setAddingItem(true);
@@ -223,6 +287,19 @@ export default function ShoppingListView({
             <Plus className="h-4 w-4 mr-1" />
             Add Item
           </Button>
+          {onMergeItems && items.length > 1 && (
+            <Button
+              variant={mergeMode ? "default" : "outline"}
+              size="sm"
+              onClick={toggleMergeMode}
+            >
+              {mergeMode ? (
+                <><X className="h-3.5 w-3.5 mr-1" />Cancel</>
+              ) : (
+                <><Merge className="h-3.5 w-3.5 mr-1" />Merge</>
+              )}
+            </Button>
+          )}
           {onClearAll && items.length > 0 && (
             <Button
               variant="outline"
@@ -267,16 +344,27 @@ export default function ShoppingListView({
                   {groupItems.map((item) => (
                     <li
                       key={item.id}
-                      className={`flex items-center gap-3 rounded-md px-2 py-1.5 ${
+                      className={`flex items-center gap-3 rounded-md px-2 py-1.5 transition-colors ${
                         item.is_owned ? "opacity-50" : ""
+                      } ${mergeMode ? "cursor-pointer hover:bg-muted/50" : ""} ${
+                        mergeMode && selectedIds.has(item.id) ? "bg-primary/10 ring-1 ring-primary/30 rounded-md" : ""
                       }`}
+                      onClick={mergeMode ? () => toggleSelectItem(item.id) : undefined}
                     >
-                      <Checkbox
-                        checked={item.is_checked}
-                        onCheckedChange={(checked: boolean) =>
-                          onItemUpdate(item.id, { is_checked: checked })
-                        }
-                      />
+                      {mergeMode ? (
+                        <Checkbox
+                          checked={selectedIds.has(item.id)}
+                          onCheckedChange={() => toggleSelectItem(item.id)}
+                          onClick={(e) => e.stopPropagation()}
+                        />
+                      ) : (
+                        <Checkbox
+                          checked={item.is_checked}
+                          onCheckedChange={(checked: boolean) =>
+                            onItemUpdate(item.id, { is_checked: checked })
+                          }
+                        />
+                      )}
                       <div className="flex flex-1 items-center gap-2 min-w-0 flex-wrap">
                         <span
                           className={`text-sm ${
@@ -320,7 +408,7 @@ export default function ShoppingListView({
                             Have
                           </span>
                         )}
-                        {onMoveToPantry && item.is_checked && (
+                        {!mergeMode && onMoveToPantry && item.is_checked && (
                           <Button
                             variant="ghost"
                             size="icon"
@@ -331,7 +419,7 @@ export default function ShoppingListView({
                             <Package className="h-3 w-3" />
                           </Button>
                         )}
-                        {onItemDelete && (
+                        {!mergeMode && onItemDelete && (
                           <Button
                             variant="ghost"
                             size="icon"
@@ -361,6 +449,32 @@ export default function ShoppingListView({
             </span>
           </CardFooter>
         </Card>
+      )}
+
+      {/* Merge mode sticky action bar */}
+      {mergeMode && (
+        <div className="sticky bottom-4 z-10">
+          <div className="mx-auto max-w-sm">
+            <div className="flex items-center justify-between gap-3 rounded-xl border bg-background px-4 py-3 shadow-lg">
+              <span className="text-sm text-muted-foreground">
+                {selectedIds.size === 0
+                  ? "Tap items to select"
+                  : `${selectedIds.size} item${selectedIds.size !== 1 ? "s" : ""} selected`}
+              </span>
+              <Button
+                size="sm"
+                disabled={selectedIds.size < 2}
+                onClick={() => {
+                  setMergeChosenName(selectedItems[0]?.ingredient_name ?? "");
+                  setMergeDialogOpen(true);
+                }}
+              >
+                <Merge className="h-3.5 w-3.5 mr-1" />
+                Merge {selectedIds.size >= 2 ? selectedIds.size : ""}
+              </Button>
+            </div>
+          </div>
+        </div>
       )}
 
       {/* Empty state */}
@@ -493,6 +607,71 @@ export default function ShoppingListView({
               disabled={!newItemName.trim() || addingItem}
             >
               {addingItem ? "Adding..." : "Add Item"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Merge Items Dialog */}
+      <Dialog open={mergeDialogOpen} onOpenChange={setMergeDialogOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Merge Items</DialogTitle>
+            <DialogDescription>
+              Choose a name for the merged item. Quantities will be combined.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4 py-2">
+            {/* Name picker */}
+            <div>
+              <p className="text-sm font-medium mb-2">Item name</p>
+              <RadioGroup
+                value={mergeChosenName}
+                onValueChange={setMergeChosenName}
+                className="space-y-2"
+              >
+                {selectedItems.map((item) => (
+                  <div key={item.id} className="flex items-center gap-2">
+                    <RadioGroupItem value={item.ingredient_name} id={`merge-name-${item.id}`} />
+                    <Label htmlFor={`merge-name-${item.id}`} className="font-normal cursor-pointer">
+                      {item.ingredient_name}
+                      {item.quantity != null && (
+                        <span className="ml-1.5 text-xs text-muted-foreground">
+                          ({item.quantity}{item.unit ? ` ${item.unit}` : ""})
+                        </span>
+                      )}
+                    </Label>
+                  </div>
+                ))}
+              </RadioGroup>
+            </div>
+
+            {/* Combined quantity preview */}
+            <div className="rounded-lg bg-muted px-4 py-3 text-sm">
+              <span className="font-medium">Combined total: </span>
+              {mergePreview?.combinedQty != null ? (
+                <span>
+                  {mergePreview.combinedQty}
+                  {mergePreview.unit ? ` ${mergePreview.unit}` : ""}
+                </span>
+              ) : (
+                <span className="text-muted-foreground">
+                  {selectedItems.every((i) => i.quantity == null)
+                    ? "No quantities to combine"
+                    : "Units differ — quantities listed separately"}
+                </span>
+              )}
+            </div>
+          </div>
+
+          <DialogFooter className="gap-2">
+            <DialogClose render={<Button variant="outline" />}>Cancel</DialogClose>
+            <Button
+              disabled={!mergeChosenName || merging}
+              onClick={handleConfirmMerge}
+            >
+              {merging ? "Merging..." : "Merge Items"}
             </Button>
           </DialogFooter>
         </DialogContent>
