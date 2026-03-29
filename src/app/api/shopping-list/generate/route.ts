@@ -1,6 +1,5 @@
 import { NextResponse } from 'next/server';
 import { createServerClient } from '@/lib/supabase/server';
-import { AISLE_ORDER } from '@/lib/constants';
 import { categorizeIngredient } from '@/lib/categorize-ingredient';
 import type { ShoppingListItem, UnitType } from '@/lib/types';
 
@@ -175,85 +174,37 @@ export async function POST(request: Request) {
       .limit(1)
       .single();
 
-    // Assign categories based on AISLE_ORDER, matching ingredient names to deal categories
-    // and create shopping list items
+    // Build shopping list items — one pass, every ingredient gets added
     const items: Array<Omit<ShoppingListItem, 'id'>> = [];
     let sortOrder = (maxSortItem?.sort_order ?? -1) + 1;
 
-    // Group by category using AISLE_ORDER
-    for (const category of AISLE_ORDER) {
-      const categoryIngredients = Array.from(ingredientMap.values()).filter(
-        (ing) => {
-          // Try to find a matching deal to get category
-          const dealInfo = dealMap.get(ing.ingredient_name.toLowerCase().trim());
-          if (dealInfo) {
-            // Check if this deal's category matches the current aisle
-            const deal = (deals || []).find((d) => d.id === dealInfo.deal_id);
-            if (deal && deal.category === category) return true;
-          }
-          // Default assignment: if category is 'other' and ingredient wasn't assigned yet
-          if (category === 'other' && ing.category === 'other') return true;
-          return false;
-        }
-      );
-
-      for (const ing of categoryIngredients) {
-        const key = ing.ingredient_name.toLowerCase().trim();
-        const dealInfo = dealMap.get(key);
-        const isOwned = pantryNames.has(key);
-
-        items.push({
-          shopping_list_id: listId,
-          ingredient_name: ing.ingredient_name,
-          quantity: ing.quantity,
-          unit: ing.unit,
-          category,
-          estimated_price: dealInfo ? dealInfo.sale_price : null,
-          deal_id: dealInfo ? dealInfo.deal_id : null,
-          is_checked: false,
-          is_owned: isOwned,
-          added_manually: false,
-          notes: null,
-          sort_order: sortOrder++,
-          store: null,
-        });
-
-        // Mark as assigned so it doesn't end up in 'other' again
-        ing.category = category;
-      }
-    }
-
-    // Catch any ingredients that weren't assigned via deals - put them in 'other'
     for (const ing of ingredientMap.values()) {
-      if (ing.category === 'other') {
-        // Check if already added
-        const alreadyAdded = items.some(
-          (item) =>
-            item.ingredient_name.toLowerCase() ===
-            ing.ingredient_name.toLowerCase()
-        );
-        if (alreadyAdded) continue;
+      const key = ing.ingredient_name.toLowerCase().trim();
+      const dealInfo = dealMap.get(key);
+      const isOwned = pantryNames.has(key);
 
-        const key = ing.ingredient_name.toLowerCase().trim();
-        const dealInfo = dealMap.get(key);
-        const isOwned = pantryNames.has(key);
-
-        items.push({
-          shopping_list_id: listId,
-          ingredient_name: ing.ingredient_name,
-          quantity: ing.quantity,
-          unit: ing.unit,
-          category: 'other',
-          estimated_price: dealInfo ? dealInfo.sale_price : null,
-          deal_id: dealInfo ? dealInfo.deal_id : null,
-          is_checked: false,
-          is_owned: isOwned,
-          added_manually: false,
-          notes: null,
-          sort_order: sortOrder++,
-          store: null,
-        });
+      // Deal category takes priority; otherwise use categorizeIngredient() result
+      let finalCategory = ing.category;
+      if (dealInfo) {
+        const deal = (deals || []).find((d) => d.id === dealInfo.deal_id);
+        if (deal?.category) finalCategory = deal.category;
       }
+
+      items.push({
+        shopping_list_id: listId,
+        ingredient_name: ing.ingredient_name,
+        quantity: ing.quantity,
+        unit: ing.unit,
+        category: finalCategory,
+        estimated_price: dealInfo ? dealInfo.sale_price : null,
+        deal_id: dealInfo ? dealInfo.deal_id : null,
+        is_checked: false,
+        is_owned: isOwned,
+        added_manually: false,
+        notes: null,
+        sort_order: sortOrder++,
+        store: null,
+      });
     }
 
     // Filter out items that already exist on the list (by ingredient name)
