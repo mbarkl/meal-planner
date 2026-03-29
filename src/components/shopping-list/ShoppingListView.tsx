@@ -79,6 +79,8 @@ export default function ShoppingListView({
   const [mergeDialogOpen, setMergeDialogOpen] = useState(false);
   const [merging, setMerging] = useState(false);
   const [mergeChosenName, setMergeChosenName] = useState("");
+  const [mergeQtyInput, setMergeQtyInput] = useState("");
+  const [mergeUnitInput, setMergeUnitInput] = useState("");
   const [newItemName, setNewItemName] = useState("");
   const [newItemQuantity, setNewItemQuantity] = useState("");
   const [newItemUnit, setNewItemUnit] = useState("");
@@ -209,12 +211,14 @@ export default function ShoppingListView({
     setMerging(true);
     try {
       const [keep, ...rest] = selectedItems;
+      const finalQty = mergeQtyInput.trim() ? parseFloat(mergeQtyInput) : null;
+      const finalUnit = mergeUnitInput.trim() || null;
       await onMergeItems(
         keep.id,
         rest.map((i) => i.id),
         mergeChosenName,
-        mergePreview?.combinedQty ?? null,
-        mergePreview?.unit ?? null
+        finalQty,
+        finalUnit
       );
       setMergeDialogOpen(false);
       setSelectedIds(new Set());
@@ -466,6 +470,14 @@ export default function ShoppingListView({
                 disabled={selectedIds.size < 2}
                 onClick={() => {
                   setMergeChosenName(selectedItems[0]?.ingredient_name ?? "");
+                  // Pre-fill quantity if units match, otherwise leave blank for user to fill
+                  if (mergePreview?.combinedQty != null) {
+                    setMergeQtyInput(String(mergePreview.combinedQty));
+                    setMergeUnitInput(mergePreview.unit ?? "");
+                  } else {
+                    setMergeQtyInput("");
+                    setMergeUnitInput(selectedItems[0]?.unit ?? "");
+                  }
                   setMergeDialogOpen(true);
                 }}
               >
@@ -647,21 +659,30 @@ export default function ShoppingListView({
               </RadioGroup>
             </div>
 
-            {/* Combined quantity preview */}
-            <div className="rounded-lg bg-muted px-4 py-3 text-sm">
-              <span className="font-medium">Combined total: </span>
-              {mergePreview?.combinedQty != null ? (
-                <span>
-                  {mergePreview.combinedQty}
-                  {mergePreview.unit ? ` ${mergePreview.unit}` : ""}
-                </span>
-              ) : (
-                <span className="text-muted-foreground">
-                  {selectedItems.every((i) => i.quantity == null)
-                    ? "No quantities to combine"
-                    : "Units differ — quantities listed separately"}
-                </span>
+            {/* Quantity input */}
+            <div>
+              <p className="text-sm font-medium mb-2">Combined quantity</p>
+              {mergePreview?.combinedQty == null && selectedItems.some((i) => i.quantity != null) && (
+                <p className="text-xs text-muted-foreground mb-2">
+                  Units differ — enter the total manually:
+                  {" "}{selectedItems.filter(i => i.quantity != null).map(i => `${i.quantity}${i.unit ? ` ${i.unit}` : ""}`).join(" + ")}
+                </p>
               )}
+              <div className="flex gap-2">
+                <Input
+                  type="number"
+                  placeholder="Qty"
+                  className="w-24"
+                  value={mergeQtyInput}
+                  onChange={(e) => setMergeQtyInput(e.target.value)}
+                />
+                <Input
+                  placeholder="Unit (can, lb, cup…)"
+                  className="flex-1"
+                  value={mergeUnitInput}
+                  onChange={(e) => setMergeUnitInput(e.target.value)}
+                />
+              </div>
             </div>
           </div>
 
